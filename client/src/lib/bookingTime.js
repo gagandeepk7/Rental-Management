@@ -1,6 +1,6 @@
 function getLocalDateAndMinutes(timeZone, instant) {
   const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timeZone || undefined,
+    timeZone: timeZone || 'UTC',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -27,21 +27,13 @@ export function getBookingTimeState(booking, role, now = new Date()) {
     isBeforeToday || (isToday && localNow.minutes >= startMinutes);
   const hasEnded =
     isBeforeToday || (isToday && localNow.minutes >= endMinutes);
-  const minutesUntilStart =
-    (Date.parse(`${booking.booking_date}T00:00:00Z`) -
-      Date.parse(`${localNow.date}T00:00:00Z`)) /
-      60000 +
-    startMinutes -
-    localNow.minutes;
   const isConfirmed = booking.status === 'confirmed';
-  const isTenant = role === 'tenant';
-  const cancellationDeadline = Number(
-    booking.property?.booking_cancellation_hours ?? 24,
-  ) * 60;
+  const isExpired = isConfirmed && hasEnded && !booking.checked_in_at;
 
   return {
     hasStarted,
     hasEnded,
+    isExpired,
     canCheckIn:
       isConfirmed &&
       !booking.checked_in_at &&
@@ -54,13 +46,6 @@ export function getBookingTimeState(booking, role, now = new Date()) {
       isConfirmed &&
       !booking.checked_in_at &&
       !hasStarted &&
-      (role === 'manager' ||
-        (isTenant && minutesUntilStart >= cancellationDeadline)),
-    cancellationDeadlinePassed:
-      isTenant &&
-      isConfirmed &&
-      !booking.checked_in_at &&
-      !hasStarted &&
-      minutesUntilStart < cancellationDeadline,
+      (role === 'manager' || role === 'tenant'),
   };
 }

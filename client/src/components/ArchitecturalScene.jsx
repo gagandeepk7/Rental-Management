@@ -15,7 +15,7 @@ import {
   Scene,
   SRGBColorSpace,
   WebGLRenderer,
-} from 'three';
+} from 'three/src/Three.js';
 
 function addTower(group, { x, width, depth, floors, floorHeight }) {
   const height = floors * floorHeight;

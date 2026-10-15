@@ -1,0 +1,153 @@
+{
+  "automatedTestsPassed": 70,
+  "frontendLint": "passed",
+  "productionBuild": "passed",
+  "serviceKeyFoundInFrontendBundle": false,
+  "hostedDomainChecked": false,
+  "checks": [
+    {
+      "check": "schema:profiles",
+      "passed": true
+    },
+    {
+      "check": "schema:properties",
+      "passed": true
+    },
+    {
+      "check": "schema:property_members",
+      "passed": true
+    },
+    {
+      "check": "schema:property_units",
+      "passed": true
+    },
+    {
+      "check": "schema:tenant_assignments",
+      "passed": true
+    },
+    {
+      "check": "schema:maintenance_requests",
+      "passed": true
+    },
+    {
+      "check": "schema:maintenance_photos",
+      "passed": true
+    },
+    {
+      "check": "schema:maintenance_comments",
+      "passed": true
+    },
+    {
+      "check": "schema:amenity_bookings",
+      "passed": true
+    },
+    {
+      "check": "schema:amenities",
+      "passed": true
+    },
+    {
+      "check": "schema:notifications",
+      "passed": true
+    },
+    {
+      "check": "schema:activity_events",
+      "passed": true
+    },
+    {
+      "check": "schema:booking_disputes",
+      "passed": true
+    },
+    {
+      "check": "storage:maintenance-photos",
+      "passed": true
+    },
+    {
+      "check": "database:policies-triggers-realtime",
+      "passed": true
+    },
+    {
+      "check": "admin-credentials",
+      "passed": true
+    },
+    {
+      "check": "tenant-assigned-property",
+      "passed": true
+    },
+    {
+      "check": "tenant-create-maintenance",
+      "passed": true
+    },
+    {
+      "check": "staff-cannot-update-unassigned-task",
+      "passed": true
+    },
+    {
+      "check": "manager-assign-task",
+      "passed": true
+    },
+    {
+      "check": "realtime-assigned-task-status",
+      "passed": true
+    },
+    {
+      "check": "comment-rls-and-internal-privacy",
+      "passed": true
+    },
+    {
+      "check": "tenant-cannot-directly-change-maintenance-status",
+      "passed": true
+    },
+    {
+      "check": "private-photo-upload-and-access",
+      "passed": true
+    },
+    {
+      "check": "unrelated-user-cannot-view-request-comments",
+      "passed": true
+    },
+    {
+      "check": "tenant-cannot-promote-own-role",
+      "passed": true
+    },
+    {
+      "check": "manager-create-amenity",
+      "passed": true
+    },
+    {
+      "check": "simultaneous-api-bookings-only-one-wins",
+      "passed": true
+    },
+    {
+      "check": "database-overlap-constraint-under-concurrency",
+      "passed": true
+    },
+    {
+      "check": "tenant-cannot-bypass-booking-api",
+      "passed": true
+    },
+    {
+      "check": "authorized-staff-check-in-out",
+      "passed": true
+    },
+    {
+      "check": "live-fixture-cleanup-and-summary",
+      "passed": true
+    },
+    {
+      "check": "co-tenant-privacy:maintenance_requests",
+      "passed": true
+    },
+    {
+      "check": "co-tenant-privacy:amenity_bookings",
+      "passed": true
+    },
+    {
+      "check": "production-http-security",
+      "passed": true
+    },
+    {
+      "check": "browser-production-bundle",
+      "passed": true
+    }
+  ]
+}

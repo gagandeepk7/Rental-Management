@@ -1,3 +1,4 @@
+import { formatTime, formatDateTime } from '../../../../shared/time.mjs';
 
 function downloadCsv(fileName, headers, rows) {
   const quote = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
@@ -11,8 +12,8 @@ function downloadCsv(fileName, headers, rows) {
 }
 
 export default function ReportsPage({ dashboard, maintenance = [], bookings = [] }) {
-  const downloadMaintenance = () => downloadCsv('propertyflow-maintenance.csv', ['Title', 'Property', 'Unit', 'Tenant', 'Priority', 'Status', 'Created', 'Due', 'Resolved'], maintenance.map((item) => [item.title, item.property?.name, item.unit?.unit_number, item.tenant?.full_name, item.priority, item.status, item.created_at, item.due_at, item.resolved_at]));
-  const downloadBookings = () => downloadCsv('propertyflow-bookings.csv', ['Amenity', 'Property', 'Tenant', 'Date', 'Check in', 'Check out', 'Status', 'Checked in at', 'Checked out at'], bookings.map((item) => [item.amenity?.name, item.property?.name, item.user?.full_name, item.booking_date, item.check_in_time, item.check_out_time, item.status, item.checked_in_at, item.checked_out_at]));
+  const downloadMaintenance = () => downloadCsv('propertyflow-maintenance.csv', ['Title', 'Property', 'Unit', 'Tenant', 'Priority', 'Status', 'Created', 'Due', 'Resolved'], maintenance.map((item) => [item.title, item.property?.name, item.unit?.unit_number, item.tenant?.full_name, item.priority, item.status, formatDateTime(item.created_at), formatDateTime(item.due_at), formatDateTime(item.resolved_at)]));
+  const downloadBookings = () => downloadCsv('propertyflow-bookings.csv', ['Amenity', 'Property', 'Tenant', 'Date', 'Check in', 'Check out', 'Status', 'Checked in at', 'Checked out at'], bookings.map((item) => [item.amenity?.name, item.property?.name, item.user?.full_name, item.booking_date, formatTime(item.check_in_time), formatTime(item.check_out_time), item.status, formatDateTime(item.checked_in_at, item.property?.timezone), formatDateTime(item.checked_out_at, item.property?.timezone)]));
 
   const openTasks = maintenance.filter((item) => item.status !== 'completed');
   const overdueTasks = openTasks.filter((item) => item.due_at && new Date(item.due_at) < new Date());

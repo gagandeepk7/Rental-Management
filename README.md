@@ -6,7 +6,7 @@ The public home page and authenticated workspaces use a shared midnight architec
 
 ## Prerequisites
 
-- Node.js 20+ recommended
+- Node.js 22 (see `.nvmrc`)
 - A Supabase project
 - A local browser with access to the frontend and backend ports
 
@@ -46,7 +46,7 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 4. Run `server/supabase/role_workflows_migration.sql` to add units, maintenance photos/comments, notifications, activity, booking disputes, and booking lifecycle fields.
 5. Run `server/supabase/feature_security_migration.sql` to enforce API-only domain writes, fix recursive read policies, validate relationships and booking slots, and extend Realtime.
 6. Run `server/supabase/maintenance_completion_review_migration.sql` to enable staff proof submissions and manager review.
-7. Run `server/supabase/maintenance_comment_rls_migration.sql` to allow authenticated request participants to post comments under row-level security.
+7. Run `server/supabase/maintenance_comment_rls_migration.sql` to allow authenticated request participants to post comments under row-level security. Then run `production_hardening_migration.sql` and `peer_privacy_migration.sql`. For an existing project, the combined `server/supabase/deployment_all_migrations.sql` includes all follow-up migrations in order.
 8. Configure Supabase Auth email invitations and verify the private `maintenance-photos` storage bucket exists (the workflow migration creates it).
 9. Add each deployed frontend origin plus its `/reset-password` path to Supabase Auth's allowed redirect URLs.
 10. Enable Realtime for `maintenance_requests`, `maintenance_comments`, `amenity_bookings`, `notifications`, and `activity_events` if they are not already in the `supabase_realtime` publication.
@@ -80,6 +80,8 @@ npm run server
 npm run client
 ```
 
+The API writes structured request-duration logs to the server console and warns when a response takes longer than two seconds. Authenticated API responses use `Cache-Control: no-store`. Realtime changes refresh only the affected workspace data and coalesce bursts of updates.
+
 ## Database migration
 
 Run:
@@ -107,7 +109,7 @@ Then execute `server/supabase/role_workflows_migration.sql`, `server/supabase/fe
 - Maintenance requests: create a request from the maintenance page.
 - Maintenance collaboration: invite staff, assign a request, verify its property and unit location, upload completion proof, submit resolution notes for manager review, and approve or return the work before it is marked complete for tenants.
 - Amenity bookings: create a reservation from the amenities page.
-- Booking lifecycle: check in/out, cancel within the property's cancellation cutoff, and raise/resolve a booking dispute.
+- Booking lifecycle: check in/out, cancel before the reserved slot starts, and raise/resolve a booking dispute.
 - Manager operations: add properties and units, invite or assign tenants, manage amenity hours, and review overdue requests and activity.
 - Notifications: verify assignment, maintenance, and booking updates appear in the notifications inbox.
 - Real-time updates: open two browser tabs and create or update the same record from one tab; updates should reflect in the other.
@@ -123,14 +125,16 @@ cd server && npm test
 Run frontend checks:
 
 ```bash
-cd client && npm run lint && npm run build
+cd client && npm run lint && VITE_API_URL=/api npm run build
 ```
 
 ## Deployment
 
-- Frontend: deploy the Vite app to Vercel with the production `VITE_*` environment variables configured.
-- Backend: deploy the Express server to a Node.js host like Render, Railway, or a VPS.
-- Use the same Supabase environment values in production and keep `SUPABASE_SERVICE_ROLE_KEY` server-only.
+Deploy the frontend and backend together as one Vercel project using the repository root. `vercel.json` builds React and routes `/api/*` to the Express function; other page paths have an SPA fallback.
+
+Follow [First deployment on Vercel](docs/deploy-vercel.md) for environment variables and Supabase redirect configuration. See [Deployment verification results](docs/deployment-readiness.md) for the checks completed and the remaining hosted-domain checks. Keep `SUPABASE_SERVICE_ROLE_KEY` server-only.
+
+After deployment, run `node scripts/check-deployment.mjs https://YOUR_PROJECT.vercel.app` to check hosted routes and API authentication.
 
 ## Manual dashboard configuration
 

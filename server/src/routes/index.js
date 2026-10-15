@@ -1,3 +1,5 @@
+import { publicDatabaseError } from '../utils/publicError.js';
+import { formatTime } from "../../../shared/time.mjs";
 import express from "express";
 import { randomUUID } from "node:crypto";
 import {
@@ -20,17 +22,6 @@ function asyncHandler(handler) {
     Promise.resolve(handler(req, res, next)).catch(next);
 }
 
-function serializeError(error) {
-  if (!error) {
-    return "Request failed.";
-  }
-
-  if (error.message) {
-    return error.message;
-  }
-
-  return "Request failed.";
-}
 
 function getLocalDateAndMinutes(timeZone, instant = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -207,6 +198,7 @@ router.post(
       email,
       password,
       options: {
+        emailRedirectTo: `${process.env.FRONTEND_ORIGIN?.split(",")[0] || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:5173")}/login`,
         data: {
           full_name: full_name || email.split("@")[0],
           role,
@@ -215,7 +207,7 @@ router.post(
     });
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     if (data?.user) {
@@ -254,7 +246,7 @@ router.post(
       password,
     });
     if (error) {
-      return res.status(401).json({ error: error.message });
+      return res.status(401).json({ error: publicDatabaseError(error) });
     }
 
     return res.json({
@@ -272,7 +264,7 @@ router.post("/auth/logout", requireAuth, async (req, res) => {
 
   const { error } = await supabase.auth.signOut();
   if (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: publicDatabaseError(error) });
   }
 
   return res.json({ success: true, message: "Logged out." });
@@ -304,7 +296,7 @@ router.get(
       .single();
 
     if (error && error.code !== "PGRST116") {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     return res.json({
@@ -349,7 +341,7 @@ router.patch(
       .single();
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     return res.json({ profile: data });
@@ -369,7 +361,7 @@ router.get(
       .eq("user_id", req.user.id)
       .order("created_at", { ascending: false })
       .limit(50);
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     return res.json({ notifications: data || [] });
   }),
 );
@@ -390,7 +382,7 @@ router.get(
       .eq("user_id", req.user.id)
       .eq("membership_role", "maintenance_staff")
       .eq("can_manage_bookings", true);
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     return res.json({
       check_in_property_ids: (data || []).map(
         (membership) => membership.property_id,
@@ -413,7 +405,7 @@ router.patch(
       .eq("user_id", req.user.id)
       .select()
       .maybeSingle();
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     if (!data)
       return res.status(404).json({ error: "Notification not found." });
     return res.json({ notification: data });
@@ -438,7 +430,7 @@ router.get(
       .in("property_id", propertyIds)
       .order("created_at", { ascending: false })
       .limit(50);
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     return res.json({ activity: data || [] });
   }),
 );
@@ -538,7 +530,7 @@ router.get(
       unitResult,
     ]) {
       if (result.error)
-        return res.status(400).json({ error: result.error.message });
+        return res.status(400).json({ error: publicDatabaseError(result.error) });
     }
     const maintenanceItems = maintenanceResult.data || [];
     const bookings = bookingResult.data || [];
@@ -590,7 +582,7 @@ router.get(
         .order("created_at", { ascending: false });
 
       if (error) {
-        return res.status(400).json({ error: error.message });
+        return res.status(400).json({ error: publicDatabaseError(error) });
       }
 
       return res.json({ properties: await addUnitCounts(supabase, data || []) });
@@ -640,7 +632,7 @@ router.post(
       .single();
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     await recordActivity(supabase, {
@@ -685,7 +677,7 @@ router.patch(
       .eq("owner_id", req.user.id)
       .select()
       .maybeSingle();
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     if (!data) return res.status(404).json({ error: "Property not found." });
     await recordActivity(supabase, {
       propertyId: data.id,
@@ -716,7 +708,7 @@ router.get(
       .eq("owner_id", req.user.id)
       .maybeSingle();
     if (property.error)
-      return res.status(400).json({ error: property.error.message });
+      return res.status(400).json({ error: publicDatabaseError(property.error) });
     if (!property.data)
       return res.status(404).json({ error: "Property not found." });
     const { data, error } = await supabase
@@ -724,7 +716,7 @@ router.get(
       .select("*")
       .eq("property_id", req.params.propertyId)
       .order("unit_number");
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     return res.json({ units: data || [] });
   }),
 );
@@ -751,7 +743,7 @@ router.post(
       .eq("owner_id", req.user.id)
       .maybeSingle();
     if (property.error)
-      return res.status(400).json({ error: property.error.message });
+      return res.status(400).json({ error: publicDatabaseError(property.error) });
     if (!property.data)
       return res.status(404).json({ error: "Property not found." });
     const { data, error } = await supabase
@@ -764,7 +756,7 @@ router.post(
       })
       .select()
       .single();
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     await recordActivity(supabase, {
       propertyId: req.params.propertyId,
       actorId: req.user.id,
@@ -792,7 +784,7 @@ router.patch(
       .select("id, property_id")
       .eq("id", req.params.id)
       .maybeSingle();
-    if (unitError) return res.status(400).json({ error: unitError.message });
+    if (unitError) return res.status(400).json({ error: publicDatabaseError(unitError) });
     if (!unit) return res.status(404).json({ error: "Unit not found." });
     const { data: property } = await supabase
       .from("properties")
@@ -816,7 +808,7 @@ router.patch(
       .eq("id", unit.id)
       .select()
       .single();
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     return res.json({ unit: data });
   }),
 );
@@ -838,7 +830,7 @@ router.get(
       .select("user_id, property_id, can_manage_bookings")
       .in("property_id", propertyIds)
       .eq("membership_role", "maintenance_staff");
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     const staffIds = [
       ...new Set((memberships || []).map((member) => member.user_id)),
     ];
@@ -848,7 +840,7 @@ router.get(
       .select("id, full_name, role")
       .in("id", staffIds)
       .eq("role", "maintenance_staff");
-    if (staffError) return res.status(400).json({ error: staffError.message });
+    if (staffError) return res.status(400).json({ error: publicDatabaseError(staffError) });
     const { data: authUsers } = await supabase.auth.admin.listUsers();
     const emails = new Map(
       (authUsers?.users || []).map((user) => [user.id, user.email]),
@@ -903,7 +895,7 @@ router.post(
         .json({ error: "You do not manage this property." });
     const { data: authUsers, error: usersError } =
       await supabase.auth.admin.listUsers();
-    if (usersError) return res.status(400).json({ error: usersError.message });
+    if (usersError) return res.status(400).json({ error: publicDatabaseError(usersError) });
     const existingUser = (authUsers?.users || []).find(
       (user) => user.email?.toLowerCase() === email.toLowerCase(),
     );
@@ -919,16 +911,17 @@ router.post(
     } else {
       const { data: invitation, error: inviteError } =
         await supabase.auth.admin.inviteUserByEmail(email, {
+          redirectTo: `${process.env.FRONTEND_ORIGIN?.split(",")[0] || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:5173")}/reset-password`,
           data: { full_name },
         });
       if (inviteError)
-        return res.status(400).json({ error: inviteError.message });
+        return res.status(400).json({ error: publicDatabaseError(inviteError) });
       staffUser = invitation.user;
       const { error: profileError } = await supabase
         .from("profiles")
         .upsert({ id: staffUser.id, full_name, role: "maintenance_staff" });
       if (profileError)
-        return res.status(400).json({ error: profileError.message });
+        return res.status(400).json({ error: publicDatabaseError(profileError) });
     }
     const { error: membershipError } = await supabase
       .from("property_members")
@@ -942,7 +935,7 @@ router.post(
         { onConflict: "property_id,user_id" },
       );
     if (membershipError)
-      return res.status(400).json({ error: membershipError.message });
+      return res.status(400).json({ error: publicDatabaseError(membershipError) });
     await recordActivity(supabase, {
       propertyId: property_id,
       actorId: req.user.id,
@@ -988,7 +981,7 @@ router.patch(
       .eq("membership_role", "maintenance_staff")
       .select()
       .maybeSingle();
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     if (!data)
       return res.status(404).json({ error: "Staff membership not found." });
     return res.json({ membership: data });
@@ -1024,7 +1017,7 @@ router.delete(
       .select("id")
       .maybeSingle();
     if (membershipError)
-      return res.status(400).json({ error: membershipError.message });
+      return res.status(400).json({ error: publicDatabaseError(membershipError) });
     if (!membership)
       return res.status(404).json({ error: "Staff membership not found." });
     await supabase
@@ -1076,7 +1069,7 @@ router.get(
       .order("created_at", { ascending: false });
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     return res.json({ properties: await addUnitCounts(supabase, data || []) });
@@ -1104,7 +1097,7 @@ router.get(
       .select("tenant_id")
       .in("property_id", propertyIds);
     if (assignmentError)
-      return res.status(400).json({ error: assignmentError.message });
+      return res.status(400).json({ error: publicDatabaseError(assignmentError) });
     const tenantIds = [
       ...new Set((assignments || []).map((assignment) => assignment.tenant_id)),
     ];
@@ -1117,13 +1110,13 @@ router.get(
       .order("full_name", { ascending: true });
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     const { data: authUsers, error: usersError } =
       await supabase.auth.admin.listUsers();
     if (usersError) {
-      return res.status(400).json({ error: usersError.message });
+      return res.status(400).json({ error: publicDatabaseError(usersError) });
     }
 
     const userMap = new Map(
@@ -1169,7 +1162,7 @@ router.get(
       .order("lease_start", { ascending: false });
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     const assignments = await Promise.all(
@@ -1261,7 +1254,7 @@ router.post(
       .maybeSingle();
 
     if (propertyError) {
-      return res.status(400).json({ error: propertyError.message });
+      return res.status(400).json({ error: publicDatabaseError(propertyError) });
     }
 
     if (!property || property.owner_id !== req.user.id) {
@@ -1283,7 +1276,7 @@ router.post(
       .maybeSingle();
 
     if (tenantError) {
-      return res.status(400).json({ error: tenantError.message });
+      return res.status(400).json({ error: publicDatabaseError(tenantError) });
     }
 
     if (!tenant || tenant.role !== "tenant") {
@@ -1311,7 +1304,7 @@ router.post(
       .in("status", ["pending", "active"]);
 
     if (assignmentError) {
-      return res.status(400).json({ error: assignmentError.message });
+      return res.status(400).json({ error: publicDatabaseError(assignmentError) });
     }
 
     const newStart = new Date(lease_start);
@@ -1412,7 +1405,7 @@ router.patch(
       .maybeSingle();
 
     if (assignmentError) {
-      return res.status(400).json({ error: assignmentError.message });
+      return res.status(400).json({ error: publicDatabaseError(assignmentError) });
     }
 
     if (!assignment) {
@@ -1450,7 +1443,7 @@ router.patch(
       .single();
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     if (data.status === "ended") {
@@ -1529,7 +1522,7 @@ router.post(
     }
     const { data: authUsers, error: usersError } =
       await supabase.auth.admin.listUsers();
-    if (usersError) return res.status(400).json({ error: usersError.message });
+    if (usersError) return res.status(400).json({ error: publicDatabaseError(usersError) });
     const existingUser = (authUsers?.users || []).find(
       (user) => user.email?.toLowerCase() === email.toLowerCase(),
     );
@@ -1546,7 +1539,7 @@ router.post(
         .eq("tenant_id", tenantId)
         .in("status", ["pending", "active"]);
       if (priorError)
-        return res.status(400).json({ error: priorError.message });
+        return res.status(400).json({ error: publicDatabaseError(priorError) });
       const newStart = new Date(lease_start);
       const newEnd = lease_end ? new Date(lease_end) : null;
       const hasOverlap = (priorAssignments || []).some(
@@ -1561,16 +1554,17 @@ router.post(
     } else {
       const { data: invitation, error: inviteError } =
         await supabase.auth.admin.inviteUserByEmail(email, {
+          redirectTo: `${process.env.FRONTEND_ORIGIN?.split(",")[0] || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:5173")}/reset-password`,
           data: { full_name },
         });
       if (inviteError)
-        return res.status(400).json({ error: inviteError.message });
+        return res.status(400).json({ error: publicDatabaseError(inviteError) });
       tenantId = invitation.user.id;
       const { error: profileError } = await supabase
         .from("profiles")
         .upsert({ id: tenantId, full_name, role: "tenant" });
       if (profileError)
-        return res.status(400).json({ error: profileError.message });
+        return res.status(400).json({ error: publicDatabaseError(profileError) });
     }
     const { data: assignment, error: assignmentError } = await supabase
       .from("tenant_assignments")
@@ -1585,7 +1579,7 @@ router.post(
       .select()
       .single();
     if (assignmentError)
-      return res.status(400).json({ error: assignmentError.message });
+      return res.status(400).json({ error: publicDatabaseError(assignmentError) });
     const { error: membershipError } = await supabase
       .from("property_members")
       .upsert(
@@ -1593,7 +1587,7 @@ router.post(
         { onConflict: "property_id,user_id" },
       );
     if (membershipError)
-      return res.status(400).json({ error: membershipError.message });
+      return res.status(400).json({ error: publicDatabaseError(membershipError) });
     await recordActivity(supabase, {
       propertyId: property_id,
       actorId: req.user.id,
@@ -1637,7 +1631,7 @@ router.get(
           .eq("id", tenantProperty.unit_id)
           .maybeSingle()
       : { data: null, error: null };
-    if (unit.error) return res.status(400).json({ error: unit.error.message });
+    if (unit.error) return res.status(400).json({ error: publicDatabaseError(unit.error) });
     const { data: manager } = await supabase
       .from("profiles")
       .select("full_name")
@@ -1691,7 +1685,7 @@ router.get(
     });
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     const requests = data || [];
@@ -1711,7 +1705,7 @@ router.get(
         .lte("lease_start", today)
         .or(`lease_end.is.null,lease_end.gte.${today}`);
       if (assignmentsError)
-        return res.status(400).json({ error: assignmentsError.message });
+        return res.status(400).json({ error: publicDatabaseError(assignmentsError) });
       for (const assignment of activeAssignments || []) {
         if (assignment.unit_id) {
           currentUnitByTenantProperty.set(
@@ -1843,7 +1837,7 @@ router.post(
       .single();
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     await Promise.all([
@@ -1994,7 +1988,7 @@ router.patch(
       .single();
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     await createNotification(supabase, {
@@ -2049,7 +2043,7 @@ router.get(
       .order("created_at");
     if (access.isTenant) query = query.eq("is_internal", false);
     const { data, error } = await query;
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     const comments = await Promise.all(
       (data || []).map(async (comment) => {
         const { data: author } = await supabase
@@ -2102,7 +2096,7 @@ router.post(
         body,
         is_internal: isInternal,
       });
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     if (!isInternal && req.user.id !== access.request.tenant_id) {
       await createNotification(supabase, {
         userId: access.request.tenant_id,
@@ -2187,7 +2181,7 @@ router.post(
     const { data, error } = await supabase.storage
       .from("maintenance-photos")
       .createSignedUploadUrl(objectPath);
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     return res.json({ object_path: data.path, token: data.token });
   }),
 );
@@ -2263,7 +2257,7 @@ router.post(
         })),
       )
       .select();
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     return res.status(201).json({ photos: data || [] });
   }),
 );
@@ -2309,7 +2303,7 @@ router.patch(
       .eq("id", access.request.id)
       .select()
       .single();
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     if (staffId)
       await createNotification(supabase, {
         userId: staffId,
@@ -2372,7 +2366,7 @@ router.get(
     });
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     return res.json({ amenities: data || [] });
@@ -2433,7 +2427,7 @@ router.post(
       .single();
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     await recordActivity(supabase, {
@@ -2465,7 +2459,7 @@ router.patch(
       .eq("id", req.params.id)
       .maybeSingle();
     if (currentError)
-      return res.status(400).json({ error: currentError.message });
+      return res.status(400).json({ error: publicDatabaseError(currentError) });
     if (!current) return res.status(404).json({ error: "Amenity not found." });
     const { data: property } = await supabase
       .from("properties")
@@ -2494,7 +2488,7 @@ router.patch(
       .eq("id", current.id)
       .select()
       .single();
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     await recordActivity(supabase, {
       propertyId: current.property_id,
       actorId: req.user.id,
@@ -2525,7 +2519,7 @@ router.get(
       .eq("id", req.params.id)
       .maybeSingle();
     if (amenityError)
-      return res.status(400).json({ error: amenityError.message });
+      return res.status(400).json({ error: publicDatabaseError(amenityError) });
     if (!amenity) return res.status(404).json({ error: "Amenity not found." });
     const profile = await getUserProfile(supabase, req.user.id);
     let canView = false;
@@ -2565,7 +2559,7 @@ router.get(
       .eq("status", "confirmed");
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     const { data: availabilityProperty, error: availabilityPropertyError } = await supabase
@@ -2600,7 +2594,7 @@ router.get(
         .eq("membership_role", "maintenance_staff")
         .eq("can_manage_bookings", true);
       if (membershipError)
-        return res.status(400).json({ error: membershipError.message });
+        return res.status(400).json({ error: publicDatabaseError(membershipError) });
       const propertyIds = [
         ...new Set((memberships || []).map((member) => member.property_id)),
       ];
@@ -2616,7 +2610,7 @@ router.get(
     });
 
     if (error) {
-      return res.status(400).json({ error: error.message });
+      return res.status(400).json({ error: publicDatabaseError(error) });
     }
 
     const bookings = await Promise.all(
@@ -2719,7 +2713,7 @@ router.post(
         .maybeSingle();
 
       if (propertyError) {
-        return res.status(400).json({ error: propertyError.message });
+        return res.status(400).json({ error: publicDatabaseError(propertyError) });
       }
       if (!property || property.owner_id !== req.user.id) {
         return res
@@ -2759,7 +2753,7 @@ router.post(
     });
 
     if (!validation.valid) {
-      return res.status(400).json({ error: validation.message });
+      return res.status(400).json({ error: publicDatabaseError(validation) });
     }
 
     const slotLength = Number(amenityResult.data.slot_duration_minutes) || 60;
@@ -2817,7 +2811,6 @@ router.post(
       return res.status(409).json({
         error:
           "Booking conflict detected. Another reservation already exists for that slot.",
-        details: serializeError(error),
       });
     }
 
@@ -2831,7 +2824,7 @@ router.post(
         userId: req.user.id,
         type: "booking",
         title: "Booking confirmed",
-        message: `${amenityResult.data.name} · ${booking_date} ${check_in_time}`,
+        message: `${amenityResult.data.name} · ${booking_date} ${formatTime(check_in_time)}`,
         entityType: "booking",
         entityId: data.id,
       }),
@@ -2839,7 +2832,7 @@ router.post(
         userId: property?.owner_id,
         type: "booking",
         title: "New amenity booking",
-        message: `${amenityResult.data.name} · ${booking_date} ${check_in_time}`,
+        message: `${amenityResult.data.name} · ${booking_date} ${formatTime(check_in_time)}`,
         entityType: "booking",
         entityId: data.id,
       }),
@@ -2874,7 +2867,7 @@ router.patch(
       .select("*")
       .eq("id", req.params.id)
       .maybeSingle();
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     if (!booking) return res.status(404).json({ error: "Booking not found." });
     const profile = await getUserProfile(supabase, req.user.id);
     const isOwner =
@@ -2921,12 +2914,6 @@ router.patch(
         return res.status(400).json({
           error: "Bookings cannot be cancelled after the reserved time has started.",
         });
-      if (isOwner) {
-        if (minutesToStart < Number(property?.booking_cancellation_hours ?? 24) * 60)
-          return res.status(400).json({
-            error: `Bookings must be cancelled at least ${property?.booking_cancellation_hours ?? 24} hours before start.`,
-          });
-      }
       update = {
         status: "cancelled",
         cancelled_at: now.toISOString(),
@@ -2963,13 +2950,13 @@ router.patch(
     if (!updateError && !data)
       return res.status(409).json({ error: "Booking changed. Refresh before trying again." });
     if (updateError)
-      return res.status(400).json({ error: updateError.message });
+      return res.status(400).json({ error: publicDatabaseError(updateError) });
     if (action !== "cancel")
       await createNotification(supabase, {
         userId: booking.user_id,
         type: "booking",
         title: action === "check_in" ? "Amenity check-in recorded" : "Amenity check-out recorded",
-        message: `${booking.booking_date} · ${booking.check_in_time.slice(0, 5)}`,
+        message: `${booking.booking_date} · ${formatTime(booking.check_in_time)}`,
         entityType: "booking",
         entityId: booking.id,
       });
@@ -3015,7 +3002,7 @@ router.post(
       .eq("id", req.params.id)
       .maybeSingle();
     if (bookingError)
-      return res.status(400).json({ error: bookingError.message });
+      return res.status(400).json({ error: publicDatabaseError(bookingError) });
     if (!booking || booking.user_id !== req.user.id)
       return res.status(404).json({ error: "Booking not found." });
     const { data: existing } = await supabase
@@ -3033,7 +3020,7 @@ router.post(
       .insert({ booking_id: booking.id, raised_by: req.user.id, details })
       .select()
       .single();
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     const { data: property } = await supabase
       .from("properties")
       .select("owner_id")
@@ -3078,7 +3065,7 @@ router.get(
       )
       .in("property_id", propertyIds);
     if (bookingsError)
-      return res.status(400).json({ error: bookingsError.message });
+      return res.status(400).json({ error: publicDatabaseError(bookingsError) });
     const bookingById = new Map(
       (bookings || []).map((booking) => [booking.id, booking]),
     );
@@ -3087,7 +3074,7 @@ router.get(
       .select("*")
       .in("booking_id", [...bookingById.keys()])
       .order("created_at", { ascending: false });
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     const disputes = await Promise.all(
       (data || []).map(async (dispute) => {
         const booking = bookingById.get(dispute.booking_id);
@@ -3137,7 +3124,7 @@ router.patch(
       .eq("id", req.params.id)
       .maybeSingle();
     if (disputeError)
-      return res.status(400).json({ error: disputeError.message });
+      return res.status(400).json({ error: publicDatabaseError(disputeError) });
     if (!dispute) return res.status(404).json({ error: "Dispute not found." });
     const { data: booking } = await supabase
       .from("amenity_bookings")
@@ -3162,7 +3149,7 @@ router.patch(
       .eq("id", dispute.id)
       .select()
       .single();
-    if (error) return res.status(400).json({ error: error.message });
+    if (error) return res.status(400).json({ error: publicDatabaseError(error) });
     await createNotification(supabase, {
       userId: booking.user_id,
       type: "booking_dispute",

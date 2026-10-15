@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { Bell, BellRing, Building2, CalendarRange, ClipboardList, House, LogOut, Menu, UserCircle2, Users, Wrench } from 'lucide-react';
 import { apiFetch } from '../lib/api.js';
@@ -20,7 +20,15 @@ const BookingDisputesPage = lazy(() => import('../pages/manager/BookingDisputesP
 const ReportsPage = lazy(() => import('../pages/manager/ReportsPage.jsx'));
 
 const emptyDashboard = { totalMaintenance: 0, pending: 0, inProgress: 0, completed: 0, unitCount: 0, upcomingBookings: 0, availableAmenities: 0 };
-const emptyProfile = { full_name: 'Resident', role: 'tenant' };
+
+async function fetchWorkspaceData(path, accessToken, label) {
+  try {
+    return await apiFetch(path, { method: 'GET' }, accessToken);
+  } catch (error) {
+    console.error(`Unable to load ${label}:`, error);
+    return null;
+  }
+}
 
 export default function AppShell({ session, onSignOut }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -33,53 +41,126 @@ export default function AppShell({ session, onSignOut }) {
   const [notifications, setNotifications] = useState([]);
   const [staff, setStaff] = useState([]);
   const [staffCapabilities, setStaffCapabilities] = useState([]);
+  const [workspaceError, setWorkspaceError] = useState('');
+  const realtimeTimers = useRef(new Map());
 
   const refreshDashboard = useCallback(async () => {
     const accessToken = session?.access_token;
     const [profileResponse, dashboardResponse, maintenanceResponse, amenitiesResponse, propertiesResponse, bookingsResponse, notificationResponse, staffResponse, capabilityResponse] = await Promise.all([
-      apiFetch('/profile', { method: 'GET' }, accessToken).catch(() => ({ profile: emptyProfile })),
-      apiFetch('/dashboard', { method: 'GET' }, accessToken).catch(() => emptyDashboard),
-      apiFetch('/maintenance', { method: 'GET' }, accessToken).catch((error) => {
-        console.error('Unable to refresh maintenance requests:', error);
-        return null;
-      }),
-      apiFetch('/amenities', { method: 'GET' }, accessToken).catch(() => ({ amenities: [] })),
-      apiFetch('/properties', { method: 'GET' }, accessToken).catch(() => ({ properties: [] })),
-      apiFetch('/bookings', { method: 'GET' }, accessToken).catch(() => ({ bookings: [] })),
-      apiFetch('/notifications', { method: 'GET' }, accessToken).catch(() => ({ notifications: [] })),
-      apiFetch('/manager/staff', { method: 'GET' }, accessToken).catch(() => ({ staff: [] })),
-      apiFetch('/staff/permissions', { method: 'GET' }, accessToken).catch(() => ({ check_in_property_ids: [] })),
+      fetchWorkspaceData('/profile', accessToken, 'profile'),
+      fetchWorkspaceData('/dashboard', accessToken, 'dashboard'),
+      fetchWorkspaceData('/maintenance', accessToken, 'maintenance requests'),
+      fetchWorkspaceData('/amenities', accessToken, 'amenities'),
+      fetchWorkspaceData('/properties', accessToken, 'properties'),
+      fetchWorkspaceData('/bookings', accessToken, 'bookings'),
+      fetchWorkspaceData('/notifications', accessToken, 'notifications'),
+      fetchWorkspaceData('/manager/staff', accessToken, 'staff'),
+      fetchWorkspaceData('/staff/permissions', accessToken, 'staff permissions'),
     ]);
-    setProfile(profileResponse.profile || emptyProfile);
-    setDashboard(dashboardResponse || emptyDashboard);
-    if (maintenanceResponse) {
-      setMaintenance(maintenanceResponse.maintenanceRequests || []);
+    if (!profileResponse?.profile) {
+      setWorkspaceError('Unable to load your profile. Check your connection and try again.');
+      return;
     }
-    setAmenities(amenitiesResponse.amenities || []);
-    setProperties(propertiesResponse.properties || []);
-    setBookings(bookingsResponse.bookings || []);
-    setNotifications(notificationResponse.notifications || []);
-    setStaff(staffResponse.staff || []);
-    setStaffCapabilities(capabilityResponse.check_in_property_ids || []);
+    setWorkspaceError('');
+    setProfile(profileResponse.profile);
+    if (dashboardResponse) setDashboard(dashboardResponse);
+    if (maintenanceResponse) setMaintenance(maintenanceResponse.maintenanceRequests || []);
+    if (amenitiesResponse) setAmenities(amenitiesResponse.amenities || []);
+    if (propertiesResponse) setProperties(propertiesResponse.properties || []);
+    if (bookingsResponse) setBookings(bookingsResponse.bookings || []);
+    if (notificationResponse) setNotifications(notificationResponse.notifications || []);
+    if (staffResponse) setStaff(staffResponse.staff || []);
+    if (capabilityResponse) setStaffCapabilities(capabilityResponse.check_in_property_ids || []);
+  }, [session]);
+
+  const refreshRealtimeGroup = useCallback(async (group) => {
+    const accessToken = session?.access_token;
+    const refresh = async (path, update, label) => {
+      try {
+        update(await apiFetch(path, { method: 'GET' }, accessToken));
+      } catch (error) {
+        console.error(`Unable to refresh ${label}:`, error);
+      }
+    };
+
+    if (group === 'maintenance') {
+      await Promise.all([
+        refresh('/maintenance', (data) => setMaintenance(data.maintenanceRequests || []), 'maintenance'),
+        refresh('/dashboard', setDashboard, 'dashboard'),
+      ]);
+    } else if (group === 'bookings') {
+      await Promise.all([
+        refresh('/bookings', (data) => setBookings(data.bookings || []), 'bookings'),
+        refresh('/dashboard', setDashboard, 'dashboard'),
+      ]);
+    } else if (group === 'amenities') {
+      await refresh('/amenities', (data) => setAmenities(data.amenities || []), 'amenities');
+    } else if (group === 'properties') {
+      await refresh('/properties', (data) => setProperties(data.properties || []), 'properties');
+    } else if (group === 'staff') {
+      await Promise.all([
+        refresh('/manager/staff', (data) => setStaff(data.staff || []), 'staff'),
+        refresh('/staff/permissions', (data) => setStaffCapabilities(data.check_in_property_ids || []), 'staff permissions'),
+      ]);
+    } else if (group === 'notifications') {
+      await refresh('/notifications', (data) => setNotifications(data.notifications || []), 'notifications');
+    }
   }, [session]);
 
   useEffect(() => {
     let isMounted = true;
+    let hasConnected = false;
+    const timers = realtimeTimers.current;
     void Promise.resolve().then(() => isMounted && refreshDashboard());
     if (!isSupabaseConfigured || !supabaseUrl) return () => { isMounted = false; };
     const channel = supabase.channel('property-updates');
     channel
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'maintenance_photos' }, () => void refreshDashboard())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'amenities' }, () => void refreshDashboard())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'property_members' }, () => void refreshDashboard())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'maintenance_requests' }, () => void refreshDashboard())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'amenity_bookings' }, () => void refreshDashboard())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'maintenance_comments' }, () => void refreshDashboard())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => void refreshDashboard())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_events' }, () => void refreshDashboard())
-      .subscribe();
-    return () => { isMounted = false; void supabase.removeChannel(channel); };
-  }, [refreshDashboard]);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'maintenance_photos' }, () => scheduleRealtimeRefresh('maintenance'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'maintenance_requests' }, () => scheduleRealtimeRefresh('maintenance'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'amenities' }, () => scheduleRealtimeRefresh('amenities'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'property_members' }, () => {
+        scheduleRealtimeRefresh('properties');
+        scheduleRealtimeRefresh('staff');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'property_units' }, () => scheduleRealtimeRefresh('properties'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'properties' }, () => scheduleRealtimeRefresh('properties'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'amenity_bookings' }, () => scheduleRealtimeRefresh('bookings'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => scheduleRealtimeRefresh('notifications'))
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.info('Property workspace Realtime connected');
+          if (hasConnected) void refreshDashboard();
+          hasConnected = true;
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.warn('Property workspace Realtime connection status:', status);
+        }
+      });
+    function scheduleRealtimeRefresh(group) {
+      const existing = timers.get(group);
+      if (existing) clearTimeout(existing);
+      timers.set(group, setTimeout(() => {
+        timers.delete(group);
+        if (isMounted) void refreshRealtimeGroup(group);
+      }, 200));
+    }
+    return () => {
+      isMounted = false;
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+      void supabase.removeChannel(channel);
+    };
+  }, [refreshDashboard, refreshRealtimeGroup]);
+
+  if (!profile && workspaceError) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 px-4 text-center text-slate-200">
+        <p role="alert">{workspaceError}</p>
+        <button type="button" onClick={() => void refreshDashboard()} className="rounded-lg bg-sky-600 px-4 py-2 font-medium text-white hover:bg-sky-500">
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   if (!profile) {
     return (

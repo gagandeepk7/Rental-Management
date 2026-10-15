@@ -8,6 +8,10 @@
     "server": "npm --prefix server run dev"
   },
   "devDependencies": {
-    "concurrently": "^9.2.5"
+    "concurrently": "^9.2.5",
+    "playwright": "^1.64.1"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }

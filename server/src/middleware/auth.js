@@ -28,10 +28,10 @@ export async function requireAuth(req, res, next) {
     req.user = user;
     req.supabase = client;
     return next();
-  } catch (error) {
+  } catch {
     return res
       .status(500)
-      .json({ error: "Authentication failed.", details: error.message });
+      .json({ error: "Authentication failed." });
   }
 }
 

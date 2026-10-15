@@ -35,6 +35,7 @@ function mockDatabase({
   owner = actor,
   assigned = actor,
   permitted = false,
+  cancellationHours = 0,
   booking = {},
   conflict = false,
   maintenanceStatus = 'pending',
@@ -66,7 +67,7 @@ function mockDatabase({
       if (table === 'amenity_bookings' && conflict) data = [];
       else data = [{ id: requestId, tenant_id: tenant, property_id: propertyId, title: 'Leak', ...JSON.parse(options.body || '{}') }];
     } else if (table === 'profiles') data = [{ id: actor, role, full_name: 'Test actor' }];
-    else if (table === 'properties') data = [{ id: propertyId, owner_id: owner, name: 'Test property', timezone: 'UTC', booking_cancellation_hours: 0 }];
+    else if (table === 'properties') data = [{ id: propertyId, owner_id: owner, name: 'Test property', timezone: 'UTC', booking_cancellation_hours: cancellationHours }];
     else if (table === 'property_units') data = units;
     else if (table === 'maintenance_requests') data = [{ id: requestId, property_id: propertyId, tenant_id: role === 'tenant' ? actor : tenant, assigned_to: assigned, unit_id: null, title: 'Leak', status: maintenanceStatus, completion_submitted_at: completionSubmittedAt, resolution_notes: completionSubmittedAt ? 'Fixed the leak.' : null }];
     else if (table === 'maintenance_photos') data = proofPhotos;
@@ -360,4 +361,21 @@ test('concurrent lifecycle update returns conflict and uses state filters', asyn
   const write = writes.find((item) => item.table === 'amenity_bookings');
   assert.equal(write.url.searchParams.get('status'), 'eq.confirmed');
   assert.equal(write.url.searchParams.get('checked_in_at'), 'is.null');
+});
+
+test('tenant can cancel an upcoming booking within the former advance cutoff', async () => {
+  const starts = new Date(Date.now() + 60 * 60 * 1000);
+  const writes = mockDatabase({ role: 'tenant', cancellationHours: 24, booking: {
+    user_id: actor, booking_date: starts.toISOString().slice(0, 10),
+    check_in_time: starts.toISOString().slice(11, 19),
+  } });
+  const res = await invoke('patch', '/bookings/:id', { params: { id: bookingId }, body: { action: 'cancel' } });
+  assert.equal(res.code, 200);
+  assert.equal(writes.find((write) => write.table === 'amenity_bookings').body.status, 'cancelled');
+});
+test('tenant cannot cancel an expired booking', async () => {
+  const writes = mockDatabase({ role: 'tenant', booking: { user_id: actor, booking_date: '2020-01-01' } });
+  const res = await invoke('patch', '/bookings/:id', { params: { id: bookingId }, body: { action: 'cancel' } });
+  assert.equal(res.code, 400);
+  assert.equal(writes.length, 0);
 });

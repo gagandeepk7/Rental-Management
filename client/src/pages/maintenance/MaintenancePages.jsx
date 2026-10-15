@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../../../shared/time.mjs';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
@@ -201,7 +202,7 @@ function MaintenanceRequestCard({ request: initialRequest, profile, session, sta
       </>}
       {error && <p role="alert" className="basis-full text-sm text-rose-200">{error}</p>}
     </div>}
-    <div className="mt-4 border-t border-slate-800 pt-4"><h5 className="text-sm font-semibold text-white">Updates</h5><div className="mt-2 space-y-2">{visibleComments.map((item) => <div key={item.id} className="rounded-lg bg-slate-900 px-3 py-2"><p className="text-xs text-sky-200">{item.author?.full_name || 'User'}{item.is_internal ? ' · Staff only' : ''} · {new Date(item.created_at).toLocaleString()}</p><p className="mt-1 text-sm text-slate-200">{item.body}</p></div>)}{visibleComments.length === 0 && <p className="text-xs text-slate-500">No updates yet.</p>}</div>
+    <div className="mt-4 border-t border-slate-800 pt-4"><h5 className="text-sm font-semibold text-white">Updates</h5><div className="mt-2 space-y-2">{visibleComments.map((item) => <div key={item.id} className="rounded-lg bg-slate-900 px-3 py-2"><p className="text-xs text-sky-200">{item.author?.full_name || 'User'}{item.is_internal ? ' · Staff only' : ''} · {formatDateTime(item.created_at)}</p><p className="mt-1 text-sm text-slate-200">{item.body}</p></div>)}{visibleComments.length === 0 && <p className="text-xs text-slate-500">No updates yet.</p>}</div>
       <form onSubmit={postComment} className="mt-3 flex flex-col gap-2 sm:flex-row"><input className="input flex-1" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a progress update or comment" required /><button disabled={busy} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:opacity-50">Post update</button></form>
       {(isManager || profile?.role === 'maintenance_staff') && <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-400"><input type="checkbox" checked={isInternal} onChange={(event) => setIsInternal(event.target.checked)} />Staff-only note</label>}
       {error && !isManager && <p role="alert" className="mt-2 text-sm text-rose-200">{error}</p>}

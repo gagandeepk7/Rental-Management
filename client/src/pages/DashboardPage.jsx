@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../../shared/time.mjs';
 import { Link } from 'react-router-dom';
 import { ArrowRight, BellRing, CheckCircle2, ShieldCheck, Wrench } from 'lucide-react';
 
@@ -102,7 +103,7 @@ export default function DashboardPage({ dashboard, maintenance, bookings, profil
           </div>
         </section>
       </div>
-      {profile.role === 'manager' && dashboard.activity?.length > 0 && <section className="card rounded-2xl p-5"><h3 className="text-lg font-semibold text-white">Recent activity</h3><div className="mt-3 divide-y divide-slate-800">{dashboard.activity.map((event) => <div key={event.id} className="py-3"><p className="font-medium text-white">{event.action.replaceAll('_', ' ')}</p><p className="text-sm text-slate-400">{event.entity_type} · {new Date(event.created_at).toLocaleString()}</p></div>)}</div></section>}
+      {profile.role === 'manager' && dashboard.activity?.length > 0 && <section className="card rounded-2xl p-5"><h3 className="text-lg font-semibold text-white">Recent activity</h3><div className="mt-3 divide-y divide-slate-800">{dashboard.activity.map((event) => <div key={event.id} className="py-3"><p className="font-medium text-white">{event.action.replaceAll('_', ' ')}</p><p className="text-sm text-slate-400">{event.entity_type} · {formatDateTime(event.created_at)}</p></div>)}</div></section>}
     </div>
   );
 }

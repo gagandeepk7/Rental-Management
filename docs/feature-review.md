@@ -44,3 +44,11 @@ The migrations have not been executed against the configured database. Database-
 After migration deployment, use separate tenant, manager, and staff sessions: create a photo request, assign it, post updates from staff, complete with notes, book a future amenity slot, attempt the same slot concurrently, then check in/out during its window. Verify a different manager cannot access the property, unassigned staff cannot change the task, tenants cannot read internal notes, and staff booking permissions can be granted/revoked by the owning manager.
 
 Availability for other tenants' reservations is refreshed through a sanitized endpoint at 15-second intervals because RLS intentionally hides their booking rows; own/manager/authorized-staff events also refresh it immediately. Signed photo URLs retain the existing one-hour expiry. Notifications remain in-app; email, SMS, and push delivery were not requested or added.
+
+## Updated tenant cancellation behavior
+
+Tenants and owning managers can cancel confirmed, unused reservations until the slot starts. The former advance cancellation cutoff is no longer enforced or offered in property settings; its legacy column is retained. Both the page and API reject cancellation once a reservation starts. The booking page refreshes its clock automatically and marks unused confirmed reservations Expired at the slot end, using property time. Checked-in reservations keep checkout available; cancelled and completed statuses are preserved. Expired is a derived display state, without a database enum migration.
+
+## Deployment verification update
+
+The earlier missing-schema findings above are historical. The live database now has all workflow and completion-review columns; current migration/security and live-test results are maintained in `docs/deployment-readiness.md`. Follow `docs/deploy-vercel.md` for the single-project deployment configuration.

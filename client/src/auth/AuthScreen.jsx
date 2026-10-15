@@ -38,7 +38,7 @@ export default function AuthScreen({ initialMode = 'login' }) {
         const { error: authError } = await supabase.auth.signUp({
           email: form.email,
           password: form.password,
-          options: { data: { full_name: form.full_name, role: 'tenant' } },
+          options: { emailRedirectTo: `${window.location.origin}/login`, data: { full_name: form.full_name, role: 'tenant' } },
         });
         if (authError) throw authError;
         setSuccess('Verification email sent. Please check your inbox and confirm your account before signing in.');

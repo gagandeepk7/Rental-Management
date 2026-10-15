@@ -1,3 +1,4 @@
+import { formatTime } from "../../../shared/time.mjs";
 export function isValidDate(value) {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
     && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))
@@ -91,7 +92,7 @@ export function validateAmenityBookingRequest({
   if (checkInMinutes < openMinutes || checkOutMinutes > closeMinutes) {
     return {
       valid: false,
-      message: `Operating hours are ${openingTime} to ${closingTime}.`,
+      message: `Operating hours are ${formatTime(openingTime)} to ${formatTime(closingTime)}.`,
     };
   }
 

@@ -60,7 +60,7 @@ export default function PropertyManagementPage({ session }) {
   const handleSaveSettings = async (settings) => {
     setBusy(true); setError(''); setMessage('');
     try {
-      const response = await apiFetch(`/manager/properties/${selectedId}`, { method: 'PATCH', body: JSON.stringify({ ...settings, booking_cancellation_hours: Number(settings.booking_cancellation_hours) }) }, session.access_token);
+      const response = await apiFetch(`/manager/properties/${selectedId}`, { method: 'PATCH', body: JSON.stringify(settings) }, session.access_token);
       setProperties((current) => current.map((property) => property.id === selectedId ? response.property : property));
       setMessage('Property settings saved.');
     } catch (saveError) { setError(saveError.message || 'Unable to save settings.'); }
@@ -119,12 +119,11 @@ export default function PropertyManagementPage({ session }) {
 }
 
 function PropertySettingsForm({ property, busy, onSave }) {
-  const [settings, setSettings] = useState({ name: property.name, address: property.address, timezone: property.timezone || 'UTC', booking_cancellation_hours: property.booking_cancellation_hours ?? 24 });
+  const [settings, setSettings] = useState({ name: property.name, address: property.address, timezone: property.timezone || 'UTC' });
   const submit = (event) => { event.preventDefault(); onSave(settings); };
   return <form onSubmit={submit} className="mt-4 grid gap-4 md:grid-cols-2">
     <div><label className="mb-1 block text-sm text-slate-300">Name</label><input required className="input" value={settings.name} onChange={(event) => setSettings((current) => ({ ...current, name: event.target.value }))} /></div>
     <div><label className="mb-1 block text-sm text-slate-300">Address</label><input required className="input" value={settings.address} onChange={(event) => setSettings((current) => ({ ...current, address: event.target.value }))} /></div>
-    <div><label className="mb-1 block text-sm text-slate-300">Tenant cancellation cutoff (hours)</label><input type="number" min="0" className="input" value={settings.booking_cancellation_hours} onChange={(event) => setSettings((current) => ({ ...current, booking_cancellation_hours: event.target.value }))} /></div>
     <div><label className="mb-1 block text-sm text-slate-300">Property timezone</label><input required className="input" value={settings.timezone} placeholder="Asia/Kolkata" onChange={(event) => setSettings((current) => ({ ...current, timezone: event.target.value }))} /></div>
     <div className="flex items-end"><button disabled={busy} className="rounded-xl bg-sky-600 px-4 py-2.5 font-medium text-white disabled:opacity-50">Save settings</button></div>
   </form>;
