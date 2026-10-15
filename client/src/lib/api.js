@@ -1,26 +1,5 @@
-const apiUrl = (
-  import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://localhost:5000/api" : "")
-).replace(/\/+$/, "");
+import { resolveApiBaseUrl } from '../../../shared/apiUrl.mjs';
+import { createApiClient } from './apiClient.js';
 
-export async function apiFetch(path, options = {}, accessToken) {
-  const headers = {
-    "Content-Type": "application/json",
-    ...(options.headers || {}),
-  };
-
-  if (accessToken) {
-    headers.Authorization = `Bearer ${accessToken}`;
-  }
-
-  const response = await fetch(`${apiUrl}${path}`, {
-    ...options,
-    headers,
-  });
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(payload.error || "Request failed");
-  }
-
-  return payload;
-}
+const apiUrl = resolveApiBaseUrl(import.meta.env.VITE_API_URL, { production: import.meta.env.PROD });
+export const apiFetch = createApiClient(apiUrl);
