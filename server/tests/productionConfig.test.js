@@ -46,10 +46,15 @@ test('rate store fails closed on database failure', async () => {
   store.init({ windowMs: 60000 });
   await assert.rejects(() => store.increment('192.0.2.1'), /unavailable/);
 });
-test('Vercel routes preserve APIs before the SPA fallback', () => {
-  const config = JSON.parse(fs.readFileSync(new URL('../../vercel.json', import.meta.url), 'utf8'));
-  for (const route of ['/api/health', '/api/bookings', '/api/maintenance']) assert.match(route, new RegExp(`^${config.routes[0].src}$`));
-  assert.equal(config.routes[0].dest, '/api/index.mjs');
-  assert.equal(config.routes[1].handle, 'filesystem');
-  assert.equal(config.routes.at(-1).dest, '/index.html');
+test('client-root Vercel deploy builds only Vite and supports SPA routes', () => {
+  const config = JSON.parse(fs.readFileSync(new URL('../../client/vercel.json', import.meta.url), 'utf8'));
+  assert.equal(config.framework, 'vite');
+  assert.equal(config.buildCommand, 'npm run build');
+  assert.equal(config.outputDirectory, 'dist');
+  assert.equal(config.functions, undefined);
+  assert.equal(config.installCommand, undefined);
+  assert.equal(config.rewrites[0].destination, '/index.html');
+  for (const path of ['/bookings', '/maintenance', '/reset-password']) {
+    assert.match(path, new RegExp(`^${config.rewrites[0].source}$`));
+  }
 });

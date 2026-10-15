@@ -1,4 +1,6 @@
-const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "/api" : "http://localhost:5000/api");
+const apiUrl = (
+  import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://localhost:5000/api" : "")
+).replace(/\/+$/, "");
 
 export async function apiFetch(path, options = {}, accessToken) {
   const headers = {
