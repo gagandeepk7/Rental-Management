@@ -1,7 +1,9 @@
 import AppShell from './app/AppShell.jsx';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthProvider.jsx';
 import AuthScreen from './auth/AuthScreen.jsx';
 import { useAuth } from './auth/useAuth.js';
+import LandingPage from './pages/LandingPage.jsx';
 
 export default function App() {
   return <AuthProvider><AuthenticatedApp /></AuthProvider>;
@@ -20,7 +22,19 @@ function AuthenticatedApp() {
     );
   }
 
-  if (!session) return <AuthScreen />;
+  if (!session || window.location.pathname === '/reset-password') {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<AuthScreen initialMode="login" />} />
+          <Route path="/register" element={<AuthScreen initialMode="register" />} />
+          <Route path="/reset-password" element={<AuthScreen initialMode="reset" />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    );
+  }
 
   return <AppShell session={session} onSignOut={signOut} />;
 }

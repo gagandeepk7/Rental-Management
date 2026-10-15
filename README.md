@@ -2,6 +2,8 @@
 
 A real-time property rental, maintenance, and amenity management platform built with React, Vite, Express, and Supabase.
 
+The public home page and authenticated workspaces use a shared midnight architectural visual system. The landing hero includes a responsive, procedural Three.js building on motion-enabled desktop browsers; architectural photography remains as the lightweight fallback on smaller screens, reduced-motion settings, or unavailable WebGL.
+
 ## Prerequisites
 
 - Node.js 20+ recommended
@@ -43,10 +45,13 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 3. Run the migration in `server/supabase/schema.sql`.
 4. Run `server/supabase/role_workflows_migration.sql` to add units, maintenance photos/comments, notifications, activity, booking disputes, and booking lifecycle fields.
 5. Run `server/supabase/feature_security_migration.sql` to enforce API-only domain writes, fix recursive read policies, validate relationships and booking slots, and extend Realtime.
-6. Configure Supabase Auth email invitations and verify the private `maintenance-photos` storage bucket exists (the workflow migration creates it).
-7. Enable Realtime for `maintenance_requests`, `maintenance_comments`, `amenity_bookings`, `notifications`, and `activity_events` if they are not already in the `supabase_realtime` publication.
-8. Keep the service-role key on the server only. The API enforces role and property access; do not expose the service-role key in the frontend.
-9. Create a manager account and assign its `profiles.role` through a trusted admin process.
+6. Run `server/supabase/maintenance_completion_review_migration.sql` to enable staff proof submissions and manager review.
+7. Run `server/supabase/maintenance_comment_rls_migration.sql` to allow authenticated request participants to post comments under row-level security.
+8. Configure Supabase Auth email invitations and verify the private `maintenance-photos` storage bucket exists (the workflow migration creates it).
+9. Add each deployed frontend origin plus its `/reset-password` path to Supabase Auth's allowed redirect URLs.
+10. Enable Realtime for `maintenance_requests`, `maintenance_comments`, `amenity_bookings`, `notifications`, and `activity_events` if they are not already in the `supabase_realtime` publication.
+11. Keep the service-role key on the server only. Maintenance photos are uploaded with short-lived signed URLs issued by the API after it verifies request access; do not expose the service-role key in the frontend.
+12. Create a manager account and assign its `profiles.role` through a trusted admin process.
 
 ## Install dependencies
 
@@ -85,7 +90,7 @@ psql "$DATABASE_URL" -f supabase/schema.sql
 ```
 
 If you are using the Supabase SQL editor, copy the contents of `server/supabase/schema.sql` into a new SQL query and execute it.
-Then execute `server/supabase/role_workflows_migration.sql` in a second query. Then execute `server/supabase/feature_security_migration.sql`. Both follow-up migrations are additive and can be run again. Do not rerun the base schema against an existing database.
+Then execute `server/supabase/role_workflows_migration.sql`, `server/supabase/feature_security_migration.sql`, `server/supabase/maintenance_completion_review_migration.sql`, and `server/supabase/maintenance_comment_rls_migration.sql` in that order. These follow-up migrations are additive and can be run again. Do not rerun the base schema against an existing database.
 
 ## First manager account and role setup
 
@@ -97,10 +102,10 @@ Then execute `server/supabase/role_workflows_migration.sql` in a second query. T
 
 ## Core feature checks
 
-- Login and registration: use the auth page.
+- Public home page: visit `/`; account access is available at `/login` and `/register`, with password recovery on the sign-in page.
 - Dashboard: visit `/` after authentication.
 - Maintenance requests: create a request from the maintenance page.
-- Maintenance collaboration: invite staff, assign a request, add progress comments, upload a request photo, and complete the task with resolution notes.
+- Maintenance collaboration: invite staff, assign a request, verify its property and unit location, upload completion proof, submit resolution notes for manager review, and approve or return the work before it is marked complete for tenants.
 - Amenity bookings: create a reservation from the amenities page.
 - Booking lifecycle: check in/out, cancel within the property's cancellation cutoff, and raise/resolve a booking dispute.
 - Manager operations: add properties and units, invite or assign tenants, manage amenity hours, and review overdue requests and activity.

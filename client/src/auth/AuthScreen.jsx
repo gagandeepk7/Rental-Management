@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { Building2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Building2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
 
-export default function AuthScreen() {
-  const [mode, setMode] = useState('login');
+export default function AuthScreen({ initialMode = 'login' }) {
+  const navigate = useNavigate();
+  const [mode, setMode] = useState(initialMode);
   const [form, setForm] = useState({ email: '', password: '', full_name: '', role: 'tenant' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -16,12 +18,22 @@ export default function AuthScreen() {
     setSuccess('');
 
     try {
-      if (mode === 'login') {
+      if (mode === 'forgot') {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(form.email, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        if (resetError) throw resetError;
+        setSuccess('If an account exists for that email, a password reset link is on its way.');
+      } else if (mode === 'login') {
         const { error: authError } = await supabase.auth.signInWithPassword({
           email: form.email,
           password: form.password,
         });
         if (authError) throw authError;
+      } else if (mode === 'reset') {
+        const { error: updateError } = await supabase.auth.updateUser({ password: form.password });
+        if (updateError) throw updateError;
+        setSuccess('Your password has been updated. Continue to your workspace when you are ready.');
       } else {
         const { error: authError } = await supabase.auth.signUp({
           email: form.email,
@@ -39,51 +51,83 @@ export default function AuthScreen() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 p-6">
-      <div className="card w-full max-w-md rounded-2xl p-6">
-        <div className="mb-6 text-center">
-          <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-sky-500/15 text-sky-300">
-            <Building2 className="h-5 w-5" />
-          </div>
-          <h1 className="text-2xl font-bold text-white">PropertyFlow</h1>
-          <p className="mt-2 text-sm text-slate-300">Rental, maintenance, and amenity management</p>
+    <main className="auth-page">
+      <div className="auth-image">
+        <Link className="brand-lockup auth-brand" to="/">
+          <span className="brand-mark"><Building2 aria-hidden="true" /></span>
+          <span><strong>PropertyFlow</strong><small>Residential operations</small></span>
+        </Link>
+        <div className="auth-image__copy">
+          <p className="eyebrow">Care starts at home</p>
+          <h1>Spaces that work<br /><em>beautifully together.</em></h1>
+          <p>One thoughtful place for residents and the people who care for their home.</p>
         </div>
-
-        <div className="mb-5 flex rounded-xl border border-slate-800 bg-slate-900/70 p-1">
-          {['login', 'register'].map((value) => (
-            <button
-              key={value}
-              type="button"
-              className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${mode === value ? 'bg-sky-600 text-white' : 'text-slate-300'}`}
-              onClick={() => setMode(value)}
-            >
-              {value === 'login' ? 'Login' : 'Register'}
-            </button>
-          ))}
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'register' && (
-            <div>
-              <label className="mb-1 block text-sm text-slate-300">Full name</label>
-              <input className="input" placeholder="Jordan Lee" value={form.full_name} onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))} />
+      </div>
+      <section className="auth-panel">
+        <Link className="auth-back" to="/"><ArrowLeft aria-hidden="true" /> Back to home</Link>
+        <div className="auth-card">
+          <p className="eyebrow">{mode === 'register' ? 'Start your experience' : mode === 'forgot' || mode === 'reset' ? 'Account recovery' : 'Welcome back'}</p>
+          <h2>{mode === 'register' ? 'Make yourself at home.' : mode === 'forgot' ? 'Reset your password.' : mode === 'reset' ? 'Choose a new password.' : 'Your home, in hand.'}</h2>
+          <p className="auth-intro">
+            {mode === 'register'
+              ? 'Create a resident account to get started.'
+              : mode === 'forgot'
+                ? 'Enter your email and we’ll send a secure reset link.'
+                : mode === 'reset'
+                  ? 'Set a new password to secure your account.'
+                : 'Sign in to continue to your workspace.'}
+          </p>
+          {(mode === 'login' || mode === 'register') && (
+            <div className="auth-tabs" role="tablist" aria-label="Account access">
+              {['login', 'register'].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === value}
+                  className={mode === value ? 'is-selected' : ''}
+                  onClick={() => {
+                    setMode(value);
+                    navigate(value === 'login' ? '/login' : '/register');
+                  }}
+                >
+                  {value === 'login' ? 'Sign in' : 'Create account'}
+                </button>
+              ))}
             </div>
           )}
-          <div>
-            <label className="mb-1 block text-sm text-slate-300">Email</label>
-            <input type="email" className="input" placeholder="tenant@example.com" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm text-slate-300">Password</label>
-            <input type="password" className="input" placeholder="Password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} />
-          </div>
-          {error && <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</div>}
-          {success && <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">{success}</div>}
-          <button type="submit" className="w-full rounded-xl bg-sky-600 px-4 py-2.5 font-medium text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60" disabled={loading}>
-            {loading ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create account'}
-          </button>
-        </form>
-      </div>
-    </div>
+          <form onSubmit={handleSubmit} className="auth-form">
+            {mode === 'register' && (
+              <div>
+                <label htmlFor="full-name">Full name</label>
+                <input id="full-name" autoComplete="name" className="input" placeholder="Jordan Lee" value={form.full_name} onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))} />
+              </div>
+            )}
+            {mode !== 'reset' && <div>
+              <label htmlFor="email">Email address</label>
+              <input id="email" type="email" autoComplete="email" required className="input" placeholder="you@example.com" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
+            </div>}
+            {mode !== 'forgot' && (
+              <div>
+                <div className="auth-label-row">
+                  <label htmlFor="password">{mode === 'reset' ? 'New password' : 'Password'}</label>
+                  {mode === 'login' && <button type="button" className="text-link" onClick={() => setMode('forgot')}>Forgot password?</button>}
+                </div>
+                <input id="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required className="input" placeholder={mode === 'reset' ? 'Choose a new password' : 'Password'} value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} />
+              </div>
+            )}
+            {error && <div role="alert" className="auth-message auth-message--error">{error}</div>}
+            {success && <div role="status" className="auth-message auth-message--success">{success}</div>}
+            <button type="submit" className="button-primary auth-submit" disabled={loading}>
+              {loading ? 'Please wait…' : mode === 'login' ? 'Sign in securely' : mode === 'register' ? 'Create account' : mode === 'reset' ? 'Update password' : 'Send reset link'}
+              {!loading && <ArrowRight aria-hidden="true" />}
+            </button>
+            {mode === 'forgot' && <button type="button" className="text-link auth-return" onClick={() => setMode('login')}>Return to sign in</button>}
+            {mode === 'reset' && success && <Link className="text-link auth-return" to="/">Continue to your workspace</Link>}
+          </form>
+          <p className="auth-footnote">Your account and property information stay protected.</p>
+        </div>
+      </section>
+    </main>
   );
 }

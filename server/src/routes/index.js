@@ -1,4 +1,5 @@
 import express from "express";
+import { randomUUID } from "node:crypto";
 import {
   createSupabaseAdminClient,
   hasSupabaseConfig,
@@ -134,6 +135,43 @@ async function getAccessibleMaintenanceRequest(supabase, requestId, userId) {
   const isAssignedStaff =
     profile?.role === "maintenance_staff" && request.assigned_to === userId;
   return { request, profile, isManager, isTenant, isAssignedStaff, property };
+}
+
+async function addUnitCounts(supabase, properties) {
+  if (!properties.length) return [];
+  const { data: units, error } = await supabase
+    .from("property_units")
+    .select("property_id, is_active")
+    .in("property_id", properties.map((property) => property.id));
+  if (error) throw error;
+  const counts = new Map();
+  for (const unit of units || []) {
+    const propertyCounts = counts.get(unit.property_id) || {
+      unit_count: 0,
+      active_unit_count: 0,
+    };
+    propertyCounts.unit_count += 1;
+    if (unit.is_active) propertyCounts.active_unit_count += 1;
+    counts.set(unit.property_id, propertyCounts);
+  }
+  return properties.map((property) => ({
+    ...property,
+    unit_count: counts.get(property.id)?.unit_count || 0,
+    active_unit_count: counts.get(property.id)?.active_unit_count || 0,
+  }));
+}
+
+async function hasValidUnitSelection(supabase, propertyId, unitId) {
+  const { data, error } = await supabase
+    .from("property_units")
+    .select("id")
+    .eq("property_id", propertyId)
+    .eq("is_active", true);
+  if (error) throw error;
+  const activeUnits = data || [];
+  return unitId
+    ? activeUnits.some((unit) => unit.id === unitId)
+    : activeUnits.length === 0;
 }
 
 router.get("/health", async (req, res) => {
@@ -416,6 +454,7 @@ router.get(
         pending: 0,
         inProgress: 0,
         completed: 0,
+        unitCount: 0,
         overdueMaintenance: 0,
         upcomingBookings: 0,
         availableAmenities: 0,
@@ -453,7 +492,7 @@ router.get(
     else if (propertyIds.length)
       maintenanceQuery = maintenanceQuery.in("property_id", propertyIds);
     else maintenanceQuery = null;
-    const [maintenanceResult, bookingResult, amenityResult, activityResult] =
+    const [maintenanceResult, bookingResult, amenityResult, activityResult, unitResult] =
       await Promise.all([
         maintenanceQuery
           ? maintenanceQuery
@@ -483,12 +522,20 @@ router.get(
               .order("created_at", { ascending: false })
               .limit(8)
           : Promise.resolve({ data: [], error: null }),
+        profile?.role === "manager" && propertyIds.length
+          ? supabase
+              .from("property_units")
+              .select("id")
+              .in("property_id", propertyIds)
+              .eq("is_active", true)
+          : Promise.resolve({ data: [], error: null }),
       ]);
     for (const result of [
       maintenanceResult,
       bookingResult,
       amenityResult,
       activityResult,
+      unitResult,
     ]) {
       if (result.error)
         return res.status(400).json({ error: result.error.message });
@@ -518,6 +565,7 @@ router.get(
       ).length,
       availableAmenities: amenities.filter((amenity) => amenity.is_active)
         .length,
+      unitCount: unitResult.data?.length || 0,
       propertyCount: propertyIds.length,
       activity: activityResult.data || [],
     });
@@ -545,7 +593,7 @@ router.get(
         return res.status(400).json({ error: error.message });
       }
 
-      return res.json({ properties: data || [] });
+      return res.json({ properties: await addUnitCounts(supabase, data || []) });
     }
 
     if (profile?.role === "tenant") {
@@ -984,6 +1032,12 @@ router.delete(
       .update({
         assigned_to: null,
         status: "pending",
+        completion_submitted_at: null,
+        completion_reviewed_at: null,
+        completion_reviewed_by: null,
+        completion_review_notes: null,
+        resolution_notes: null,
+        resolved_at: null,
         updated_at: new Date().toISOString(),
       })
       .eq("property_id", property.id)
@@ -1025,7 +1079,7 @@ router.get(
       return res.status(400).json({ error: error.message });
     }
 
-    return res.json({ properties: data || [] });
+    return res.json({ properties: await addUnitCounts(supabase, data || []) });
   }),
 );
 
@@ -1216,18 +1270,10 @@ router.post(
       });
     }
 
-    if (unit_id) {
-      const { data: unit, error: unitError } = await supabase
-        .from("property_units")
-        .select("id, is_active")
-        .eq("id", unit_id)
-        .eq("property_id", property_id)
-        .maybeSingle();
-      if (unitError) return res.status(400).json({ error: unitError.message });
-      if (!unit || !unit.is_active)
-        return res
-          .status(400)
-          .json({ error: "Select an active unit in this property." });
+    if (!(await hasValidUnitSelection(supabase, property_id, unit_id))) {
+      return res.status(400).json({
+        error: "Select an active unit in this property before assigning a tenant.",
+      });
     }
 
     const { data: tenant, error: tenantError } = await supabase
@@ -1344,7 +1390,8 @@ router.patch(
   "/tenant-assignments/:id",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { status, lease_end } = req.body || {};
+    const { status, lease_end, unit_id } = req.body || {};
+    const hasUnitUpdate = Object.hasOwn(req.body || {}, "unit_id");
     const supabase = createSupabaseAdminClient();
     if (!supabase) {
       return res.status(500).json({ error: "Supabase is not configured." });
@@ -1383,12 +1430,19 @@ router.patch(
         .status(403)
         .json({ error: "You cannot update this assignment." });
     }
+    if (hasUnitUpdate &&
+        !(await hasValidUnitSelection(supabase, assignment.property_id, unit_id || null))) {
+      return res.status(400).json({
+        error: "Select an active unit in this property before updating the assignment.",
+      });
+    }
 
     const { data, error } = await supabase
       .from("tenant_assignments")
       .update({
         status: status || assignment.status,
         lease_end: lease_end || assignment.lease_end || null,
+        ...(hasUnitUpdate ? { unit_id: unit_id || null } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("id", assignment.id)
@@ -1428,7 +1482,10 @@ router.patch(
       entityType: "tenant_assignment",
       entityId: assignment.id,
       action: `assignment_${data.status}`,
-      details: { tenant_id: assignment.tenant_id },
+      details: {
+        tenant_id: assignment.tenant_id,
+        unit_id: hasUnitUpdate ? data.unit_id : assignment.unit_id,
+      },
     });
 
     return res.json({ assignment: data });
@@ -1465,17 +1522,10 @@ router.post(
       return res
         .status(400)
         .json({ error: "Lease end must be on or after lease start." });
-    if (unit_id) {
-      const { data: unit } = await supabase
-        .from("property_units")
-        .select("id, is_active")
-        .eq("id", unit_id)
-        .eq("property_id", property_id)
-        .maybeSingle();
-      if (!unit || !unit.is_active)
-        return res
-          .status(400)
-          .json({ error: "Select an active unit in this property." });
+    if (!(await hasValidUnitSelection(supabase, property_id, unit_id))) {
+      return res.status(400).json({
+        error: "Select an active unit in this property before assigning a tenant.",
+      });
     }
     const { data: authUsers, error: usersError } =
       await supabase.auth.admin.listUsers();
@@ -1644,8 +1694,39 @@ router.get(
       return res.status(400).json({ error: error.message });
     }
 
+    const requests = data || [];
+    const unitlessTenantIds = [...new Set(
+      requests
+        .filter((request) => !request.unit_id && request.status !== "completed")
+        .map((request) => request.tenant_id),
+    )];
+    const currentUnitByTenantProperty = new Map();
+    if (unitlessTenantIds.length) {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: activeAssignments, error: assignmentsError } = await supabase
+        .from("tenant_assignments")
+        .select("tenant_id, property_id, unit_id")
+        .in("tenant_id", unitlessTenantIds)
+        .eq("status", "active")
+        .lte("lease_start", today)
+        .or(`lease_end.is.null,lease_end.gte.${today}`);
+      if (assignmentsError)
+        return res.status(400).json({ error: assignmentsError.message });
+      for (const assignment of activeAssignments || []) {
+        if (assignment.unit_id) {
+          currentUnitByTenantProperty.set(
+            `${assignment.tenant_id}:${assignment.property_id}`,
+            assignment.unit_id,
+          );
+        }
+      }
+    }
+
     const maintenanceRequests = await Promise.all(
-      (data || []).map(async (request) => {
+      requests.map(async (request) => {
+        const unitId = request.unit_id || (request.status !== "completed"
+          ? currentUnitByTenantProperty.get(`${request.tenant_id}:${request.property_id}`)
+          : null);
         const [tenantResult, propertyResult, unitResult, photoResult] =
           await Promise.all([
             supabase
@@ -1658,19 +1739,22 @@ router.get(
               .select("id, name, address")
               .eq("id", request.property_id)
               .maybeSingle(),
-            request.unit_id
+            unitId
               ? supabase
                   .from("property_units")
                   .select("unit_number")
-                  .eq("id", request.unit_id)
+                  .eq("id", unitId)
                   .maybeSingle()
               : Promise.resolve({ data: null }),
             supabase
               .from("maintenance_photos")
-              .select("id, object_path, file_name, content_type, created_at")
+              .select("id, object_path, file_name, content_type, uploaded_by, is_completion_proof, created_at")
               .eq("request_id", request.id)
               .order("created_at"),
           ]);
+        for (const result of [tenantResult, propertyResult, unitResult, photoResult]) {
+          if (result.error) throw result.error;
+        }
         const photos = await Promise.all(
           (photoResult.data || []).map(async (photo) => {
             const { data: signed } = await supabase.storage
@@ -1789,7 +1873,7 @@ router.patch(
   "/maintenance/:id/status",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { status, resolution_notes } = req.body || {};
+    const { status, action, resolution_notes, review_notes } = req.body || {};
     const supabase = createSupabaseAdminClient();
     if (!supabase) {
       return res.status(500).json({ error: "Supabase is not configured." });
@@ -1808,28 +1892,103 @@ router.patch(
           "Only the property manager or assigned staff can update this request.",
       });
     }
-    if (!["pending", "in_progress", "completed"].includes(status)) {
-      return res
-        .status(400)
-        .json({ error: "A valid maintenance status is required." });
-    }
-    if (status === "completed" && (typeof resolution_notes !== "string" || !resolution_notes.trim() || resolution_notes.length > 10000)) {
-      return res
-        .status(400)
-        .json({ error: "Add resolution notes before completing the request." });
+
+    const now = new Date().toISOString();
+    let changes;
+    let activityAction;
+    let notificationMessage;
+    let notificationUserId = access.request.tenant_id;
+
+    if (action === "approve_completion" || action === "request_changes") {
+      if (!access.isManager) {
+        return res.status(403).json({ error: "Manager access required." });
+      }
+      if (!access.request.completion_submitted_at) {
+        return res.status(400).json({ error: "There is no staff completion awaiting review." });
+      }
+      if (action === "request_changes" &&
+          (typeof review_notes !== "string" || !review_notes.trim() || review_notes.length > 10000)) {
+        return res.status(400).json({ error: "Explain what needs to be changed before sending the task back." });
+      }
+      if (action === "approve_completion") {
+        changes = {
+          status: "completed",
+          completion_reviewed_at: now,
+          completion_reviewed_by: req.user.id,
+          completion_review_notes: null,
+          resolved_at: now,
+          updated_at: now,
+        };
+        activityAction = "request_completed";
+        notificationMessage = `Resolved: ${access.request.title}`;
+      } else {
+        const feedback = review_notes.trim();
+        changes = {
+          status: "in_progress",
+          completion_submitted_at: null,
+          completion_reviewed_at: now,
+          completion_reviewed_by: req.user.id,
+          completion_review_notes: feedback,
+          resolved_at: null,
+          updated_at: now,
+        };
+        activityAction = "completion_changes_requested";
+        notificationMessage = `More work is needed on ${access.request.title}.`;
+        notificationUserId = access.request.assigned_to;
+      }
+    } else if (status === "completed") {
+      if (!access.isAssignedStaff) {
+        return res.status(403).json({ error: "Only assigned staff can submit work for manager review." });
+      }
+      if (access.request.status !== "in_progress" || access.request.completion_submitted_at) {
+        return res.status(400).json({ error: "Start the task before submitting it, and wait for manager review before resubmitting." });
+      }
+      if (typeof resolution_notes !== "string" || !resolution_notes.trim() || resolution_notes.length > 10000) {
+        return res.status(400).json({ error: "Add resolution notes before submitting this task for review." });
+      }
+      const { data: proofPhotos, error: proofError } = await supabase
+        .from("maintenance_photos")
+        .select("id")
+        .eq("request_id", access.request.id)
+        .eq("uploaded_by", req.user.id)
+        .eq("is_completion_proof", true);
+      if (proofError) throw proofError;
+      if (!proofPhotos?.length) {
+        return res.status(400).json({ error: "Upload at least one completion proof photo before submitting the task." });
+      }
+      changes = {
+        completion_submitted_at: now,
+        completion_reviewed_at: null,
+        completion_reviewed_by: null,
+        completion_review_notes: null,
+        resolution_notes: resolution_notes.trim(),
+        updated_at: now,
+      };
+      activityAction = "completion_submitted";
+      notificationMessage = `Work is ready for review: ${access.request.title}`;
+      notificationUserId = access.property?.owner_id;
+    } else if (["pending", "in_progress"].includes(status)) {
+      if (access.request.status === "completed") {
+        return res.status(409).json({ error: "Completed maintenance requests cannot be reopened through this status action." });
+      }
+      if (status === "pending" && !access.isManager) {
+        return res.status(403).json({ error: "Only the property manager can return a task to pending." });
+      }
+      if (access.request.completion_submitted_at) {
+        return res.status(400).json({ error: "The manager must review the submitted work before changing its status." });
+      }
+      changes = { status, updated_at: now };
+      activityAction = `request_${status}`;
+      notificationMessage = `${access.request.title} is now ${status.replace("_", " ")}.`;
+    } else {
+      return res.status(400).json({
+        error: "A valid maintenance status or manager review action is required.",
+      });
     }
 
     const { data, error } = await supabase
       .from("maintenance_requests")
-      .update({
-        status,
-        resolution_notes:
-          status === "completed"
-            ? String(resolution_notes).trim()
-            : access.request.resolution_notes,
-        updated_at: new Date().toISOString(),
-        resolved_at: status === "completed" ? new Date().toISOString() : null,
-      })
+      .update(changes)
       .eq("id", req.params.id)
       .select()
       .single();
@@ -1838,20 +1997,13 @@ router.patch(
       return res.status(400).json({ error: error.message });
     }
 
-    await supabase.from("maintenance_comments").insert({
-      request_id: data.id,
-      author_id: req.user.id,
-      body: `Status changed to ${status}.${status === "completed" ? ` Resolution: ${String(resolution_notes).trim()}` : ""}`,
-      is_internal: false,
-    });
     await createNotification(supabase, {
-      userId: data.tenant_id,
+      userId: notificationUserId,
       type: "maintenance",
-      title: "Maintenance request updated",
-      message:
-        status === "completed"
-          ? `Resolved: ${data.title}`
-          : `${data.title} is now ${status.replace("_", " ")}.`,
+      title: action === "approve_completion" ? "Maintenance work approved" :
+        action === "request_changes" ? "Maintenance work needs changes" :
+          status === "completed" ? "Work submitted for manager review" : "Maintenance request updated",
+      message: notificationMessage,
       entityType: "maintenance_request",
       entityId: data.id,
     });
@@ -1860,8 +2012,12 @@ router.patch(
       actorId: req.user.id,
       entityType: "maintenance_request",
       entityId: data.id,
-      action: `request_${status}`,
-      details: { title: data.title, resolution_notes: data.resolution_notes },
+      action: activityAction,
+      details: {
+        title: data.title,
+        resolution_notes: data.resolution_notes,
+        review_notes: data.completion_review_notes,
+      },
     });
 
     return res.json({ maintenanceRequest: data });
@@ -1938,16 +2094,14 @@ router.post(
         error: "Only managers and assigned staff can add internal comments.",
       });
     }
-    const { data, error } = await supabase
+    const { error } = await req.supabase
       .from("maintenance_comments")
       .insert({
         request_id: access.request.id,
         author_id: req.user.id,
         body,
         is_internal: isInternal,
-      })
-      .select()
-      .single();
+      });
     if (error) return res.status(400).json({ error: error.message });
     if (!isInternal && req.user.id !== access.request.tenant_id) {
       await createNotification(supabase, {
@@ -1967,12 +2121,74 @@ router.post(
       action: "comment_added",
       details: { internal: isInternal },
     });
-    const { data: author } = await supabase
-      .from("profiles")
-      .select("id, full_name, role")
-      .eq("id", req.user.id)
-      .maybeSingle();
-    return res.status(201).json({ comment: { ...data, author } });
+    return res.status(201).json({ success: true });
+  }),
+);
+
+router.post(
+  "/maintenance/:id/photos/upload-url",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const supabase = createSupabaseAdminClient();
+    if (!supabase)
+      return res.status(500).json({ error: "Supabase is not configured." });
+    const access = await getAccessibleMaintenanceRequest(
+      supabase,
+      req.params.id,
+      req.user.id,
+    );
+    if (
+      !access.request ||
+      (!access.isManager && !access.isTenant && !access.isAssignedStaff)
+    ) {
+      return res.status(404).json({ error: "Maintenance request not found." });
+    }
+
+    const { file_name, content_type, is_completion_proof = false } = req.body || {};
+    if (
+      typeof file_name !== "string" ||
+      !file_name.trim() ||
+      file_name.length > 255 ||
+      !["image/jpeg", "image/png", "image/webp", "image/heic"].includes(content_type) ||
+      typeof is_completion_proof !== "boolean"
+    ) {
+      return res.status(400).json({ error: "Valid image filename, content type, and proof flag are required." });
+    }
+    if (
+      is_completion_proof &&
+      (!access.isAssignedStaff ||
+        access.request.status !== "in_progress" ||
+        access.request.completion_submitted_at)
+    ) {
+      return res.status(403).json({
+        error: "Only assigned staff can upload completion proof while work is in progress.",
+      });
+    }
+    if (access.isAssignedStaff && !is_completion_proof) {
+      return res.status(400).json({ error: "Staff uploads must be marked as completion proof." });
+    }
+
+    const { count, error: countError } = await supabase
+      .from("maintenance_photos")
+      .select("id", { head: true, count: "exact" })
+      .eq("request_id", access.request.id);
+    if (countError) throw countError;
+    if ((count || 0) >= 5) {
+      return res.status(400).json({ error: "A request can include at most five photos." });
+    }
+
+    const extensionByType = {
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+      "image/heic": "heic",
+    };
+    const objectPath = `${access.request.id}/${randomUUID()}.${extensionByType[content_type]}`;
+    const { data, error } = await supabase.storage
+      .from("maintenance-photos")
+      .createSignedUploadUrl(objectPath);
+    if (error) return res.status(400).json({ error: error.message });
+    return res.json({ object_path: data.path, token: data.token });
   }),
 );
 
@@ -1995,6 +2211,17 @@ router.post(
       return res.status(404).json({ error: "Maintenance request not found." });
     }
     const photos = Array.isArray(req.body?.photos) ? req.body.photos : [];
+    const isCompletionProof = req.body?.is_completion_proof === true;
+    if (req.body?.is_completion_proof !== undefined && typeof req.body.is_completion_proof !== "boolean") {
+      return res.status(400).json({ error: "Photo proof metadata is invalid." });
+    }
+    if (isCompletionProof &&
+        (!access.isAssignedStaff || access.request.status !== "in_progress" || access.request.completion_submitted_at)) {
+      return res.status(403).json({ error: "Only assigned staff can attach completion proof while work is in progress." });
+    }
+    if (access.isAssignedStaff && !isCompletionProof) {
+      return res.status(400).json({ error: "Staff uploads must be marked as completion proof." });
+    }
     if (!photos.length)
       return res
         .status(400)
@@ -2032,6 +2259,7 @@ router.post(
           object_path: photo.object_path,
           file_name: photo.file_name,
           content_type: photo.content_type,
+          is_completion_proof: isCompletionProof,
         })),
       )
       .select();
@@ -2054,6 +2282,8 @@ router.patch(
     );
     if (!access.request || !access.isManager)
       return res.status(404).json({ error: "Maintenance request not found." });
+    if (access.request.completion_submitted_at)
+      return res.status(409).json({ error: "Review or return the submitted work before changing its assignment." });
     const staffId = req.body?.staff_id || null;
     if (staffId) {
       const { data: staff } = await supabase
@@ -2400,7 +2630,9 @@ router.get(
               .maybeSingle(),
             supabase
               .from("properties")
-              .select("name, address, owner_id")
+              .select(
+                "name, address, owner_id, timezone, booking_cancellation_hours",
+              )
               .eq("id", booking.property_id)
               .maybeSingle(),
             profile?.role === "manager" || booking.user_id === req.user.id
@@ -2679,9 +2911,18 @@ router.patch(
         return res
           .status(400)
           .json({ error: "Only confirmed bookings can be cancelled." });
+      const localNow = getLocalDateAndMinutes(property?.timezone, now);
+      const minutesToStart = minutesUntilBooking(
+        booking.booking_date,
+        toMinutes(booking.check_in_time),
+        localNow,
+      );
+      if (minutesToStart <= 0)
+        return res.status(400).json({
+          error: "Bookings cannot be cancelled after the reserved time has started.",
+        });
       if (isOwner) {
-        const localNow = getLocalDateAndMinutes(property?.timezone, now);
-        if (minutesUntilBooking(booking.booking_date, toMinutes(booking.check_in_time), localNow) < Number(property?.booking_cancellation_hours ?? 24) * 60)
+        if (minutesToStart < Number(property?.booking_cancellation_hours ?? 24) * 60)
           return res.status(400).json({
             error: `Bookings must be cancelled at least ${property?.booking_cancellation_hours ?? 24} hours before start.`,
           });

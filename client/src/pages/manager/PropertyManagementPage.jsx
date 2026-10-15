@@ -22,7 +22,15 @@ export default function PropertyManagementPage({ session }) {
     if (!propertyId) return setUnits([]);
     try {
       const response = await apiFetch(`/manager/properties/${propertyId}/units`, {}, session.access_token);
-      setUnits(response.units || []);
+      const loadedUnits = response.units || [];
+      setUnits(loadedUnits);
+      setProperties((current) => current.map((property) => property.id === propertyId
+        ? {
+            ...property,
+            unit_count: loadedUnits.length,
+            active_unit_count: loadedUnits.filter((unit) => unit.is_active).length,
+          }
+        : property));
     } catch (loadError) {
       setError(loadError.message || 'Could not load units. Run the workflow migration first.');
     }
@@ -87,7 +95,7 @@ export default function PropertyManagementPage({ session }) {
           <input required className="input" placeholder="Street address" value={form.address} onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))} />
           <button disabled={busy} className="rounded-xl bg-sky-600 px-4 py-2.5 font-medium text-white disabled:opacity-50">Add property</button>
         </form>
-        <div className="mt-5"><label className="mb-1 block text-sm text-slate-300">Manage property</label><select className="input" value={selectedId} onChange={(event) => setSelectedId(event.target.value)}><option value="">Select property</option>{properties.map((property) => <option key={property.id} value={property.id}>{property.name} · {property.address}</option>)}</select></div>
+        <div className="mt-5"><label className="mb-1 block text-sm text-slate-300">Manage property</label><select className="input" value={selectedId} onChange={(event) => setSelectedId(event.target.value)}><option value="">Select property</option>{properties.map((property) => <option key={property.id} value={property.id}>{property.name} · {property.address} · {property.active_unit_count ?? property.unit_count ?? 0} active units</option>)}</select></div>
         {message && <p className="mt-4 text-sm text-emerald-200">{message}</p>}{error && <p className="mt-4 text-sm text-rose-200">{error}</p>}
       </section>
       {selected && <>
@@ -96,14 +104,14 @@ export default function PropertyManagementPage({ session }) {
           <PropertySettingsForm key={selected.id} property={selected} busy={busy} onSave={handleSaveSettings} />
         </section>
         <section className="card rounded-2xl p-5">
-          <h3 className="text-lg font-semibold text-white">Units</h3>
+          <h3 className="text-lg font-semibold text-white">Units <span className="ml-2 text-sm font-normal text-slate-400">{units.filter((unit) => unit.is_active).length} active · {units.length} total</span></h3>
           <form onSubmit={handleCreateUnit} className="mt-4 grid gap-3 sm:grid-cols-4">
             <input required className="input" placeholder="Unit or apartment number" value={unitForm.unit_number} onChange={(event) => setUnitForm((current) => ({ ...current, unit_number: event.target.value }))} />
             <label className="text-sm text-slate-300">Bedrooms<input type="number" min="0" className="input mt-1" value={unitForm.bedrooms} onChange={(event) => setUnitForm((current) => ({ ...current, bedrooms: event.target.value }))} /></label>
             <label className="text-sm text-slate-300">Bathrooms<input type="number" min="0" step="0.5" className="input mt-1" value={unitForm.bathrooms} onChange={(event) => setUnitForm((current) => ({ ...current, bathrooms: event.target.value }))} /></label>
             <button disabled={busy} className="self-end rounded-xl bg-sky-600 px-4 py-2.5 font-medium text-white disabled:opacity-50">Add unit</button>
           </form>
-          <div className="mt-4 divide-y divide-slate-800">{units.length ? units.map((unit) => <div key={unit.id} className="flex items-center justify-between gap-4 py-3"><div><p className="font-medium text-white">Unit {unit.unit_number}</p><p className="text-sm text-slate-400">{unit.bedrooms} bedrooms · {unit.bathrooms} bathrooms</p></div><button type="button" onClick={() => toggleUnit(unit)} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200">{unit.is_active ? 'Deactivate' : 'Activate'}</button></div>) : <p className="py-4 text-sm text-slate-400">No units added yet.</p>}</div>
+          <div className="mt-4 divide-y divide-slate-800">{units.length ? units.map((unit) => <div key={unit.id} className="flex flex-wrap items-center justify-between gap-4 py-3"><div><p className="font-medium text-white">Unit {unit.unit_number}</p><p className="text-sm text-slate-400">{unit.bedrooms} bedrooms · {unit.bathrooms} bathrooms</p></div><button type="button" onClick={() => toggleUnit(unit)} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200">{unit.is_active ? 'Deactivate' : 'Activate'}</button></div>) : <p className="py-4 text-sm text-slate-400">No units added yet.</p>}</div>
         </section>
       </>}
     </div>

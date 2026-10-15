@@ -19,6 +19,7 @@ test("rejects bookings outside operating hours", () => {
     openingTime: "09:00",
     closingTime: "21:00",
     isActive: true,
+    localNow: { date: "2026-10-14", minutes: 0 },
   });
 
   assert.equal(result.valid, false);
