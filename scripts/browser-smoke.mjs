@@ -38,7 +38,14 @@ try {
     signupRequests.push(route.request().postDataJSON());
     await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error_code: 'email_address_invalid', msg: 'Invalid email' }) });
   });
+  await page.getByLabel('Sign in as', { exact: true }).selectOption('manager');
+  await page.getByRole('button', { name: 'Sign in as manager', exact: true }).waitFor();
+  assert.match(await page.locator('#login-role-help').innerText(), /assigned manager account/);
+  await page.getByLabel('Sign in as', { exact: true }).selectOption('maintenance_staff');
+  await page.getByRole('button', { name: 'Sign in as maintenance staff', exact: true }).waitFor();
+  await page.getByLabel('Sign in as', { exact: true }).selectOption('tenant');
   await page.getByRole('tab', { name: 'Create account' }).click();
+  await page.getByLabel('Account type', { exact: true }).selectOption('manager');
   await page.getByLabel('Full name').fill('Browser Test');
   await page.getByLabel('Email address').fill('  PERSON@GMAIL.COM  ');
   await page.getByLabel('Password', { exact: true }).fill('ValidPassword123!');
@@ -46,7 +53,7 @@ try {
   await page.getByRole('alert').filter({ hasText: 'real, deliverable email address' }).waitFor();
   assert.equal(signupRequests.length, 1);
   assert.equal(signupRequests[0].email, 'person@gmail.com');
-  assert.equal(signupRequests[0].data.role, 'tenant');
+  assert.equal(signupRequests[0].data.registration_role, 'manager');
   await page.getByRole('tab', { name: 'Sign in', exact: true }).click();
   assert.equal(await page.getByRole('alert').count(), 0);
   await page.getByRole('button', { name: 'Forgot password?' }).click();

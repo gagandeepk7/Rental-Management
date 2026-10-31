@@ -1,3 +1,4 @@
+import { completeRegistrationRole } from '../utils/registrationRole.js';
 import { publicDatabaseError } from '../utils/publicError.js';
 import { formatTime } from "../../../shared/time.mjs";
 import express from "express";
@@ -177,8 +178,10 @@ router.get("/health", async (req, res) => {
 router.post(
   "/auth/signup",
   asyncHandler(async (req, res) => {
-    const { email, password, full_name } = req.body || {};
-    const role = "tenant";
+    const { email, password, full_name, role = "tenant" } = req.body || {};
+    if (!["tenant", "manager", "maintenance_staff"].includes(role)) {
+      return res.status(400).json({ error: "Choose a valid account type." });
+    }
 
     if (!email || !password) {
       return res
@@ -201,22 +204,13 @@ router.post(
         emailRedirectTo: `${process.env.FRONTEND_ORIGIN?.split(",")[0] || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:5173")}/login`,
         data: {
           full_name: full_name || email.split("@")[0],
-          role,
+          registration_role: role,
         },
       },
     });
 
     if (error) {
       return res.status(400).json({ error: publicDatabaseError(error) });
-    }
-
-    if (data?.user) {
-      await supabase.from("profiles").upsert({
-        id: data.user.id,
-        full_name: full_name || email.split("@")[0],
-        role,
-        created_at: new Date().toISOString(),
-      });
     }
 
     return res
@@ -300,7 +294,7 @@ router.get(
     }
 
     return res.json({
-      profile: data || {
+      profile: data ? await completeRegistrationRole(supabase, req.user, data) : {
         id: req.user.id,
         full_name: req.user.email,
         role: "tenant",

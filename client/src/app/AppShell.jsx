@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { Bell, BellRing, Building2, CalendarRange, ClipboardList, House, LogOut, Menu, UserCircle2, Users, Wrench } from 'lucide-react';
+import { fetchStaffWorkspace } from '../lib/staffWorkspace.js';
 import { apiFetch } from '../lib/api.js';
 import { isSupabaseConfigured, supabase, supabaseUrl } from '../lib/supabase.js';
 const TenantManagementPage = lazy(() => import('../pages/manager/TenantManagementPage.jsx'));
@@ -43,24 +44,25 @@ export default function AppShell({ session, onSignOut }) {
   const [staffCapabilities, setStaffCapabilities] = useState([]);
   const [workspaceError, setWorkspaceError] = useState('');
   const realtimeTimers = useRef(new Map());
+  const workspaceRole = useRef(null);
 
   const refreshDashboard = useCallback(async () => {
     const accessToken = session?.access_token;
-    const [profileResponse, dashboardResponse, maintenanceResponse, amenitiesResponse, propertiesResponse, bookingsResponse, notificationResponse, staffResponse, capabilityResponse] = await Promise.all([
-      fetchWorkspaceData('/profile', accessToken, 'profile'),
+    const profileResponse = await fetchWorkspaceData('/profile', accessToken, 'profile');
+    if (!profileResponse?.profile) {
+      setWorkspaceError('Unable to load your profile. Check your connection and try again.');
+      return;
+    }
+    workspaceRole.current = profileResponse.profile.role;
+    const [dashboardResponse, maintenanceResponse, amenitiesResponse, propertiesResponse, bookingsResponse, notificationResponse, { staffResponse, capabilityResponse }] = await Promise.all([
       fetchWorkspaceData('/dashboard', accessToken, 'dashboard'),
       fetchWorkspaceData('/maintenance', accessToken, 'maintenance requests'),
       fetchWorkspaceData('/amenities', accessToken, 'amenities'),
       fetchWorkspaceData('/properties', accessToken, 'properties'),
       fetchWorkspaceData('/bookings', accessToken, 'bookings'),
       fetchWorkspaceData('/notifications', accessToken, 'notifications'),
-      fetchWorkspaceData('/manager/staff', accessToken, 'staff'),
-      fetchWorkspaceData('/staff/permissions', accessToken, 'staff permissions'),
+      fetchStaffWorkspace(workspaceRole.current, (path, label) => fetchWorkspaceData(path, accessToken, label)),
     ]);
-    if (!profileResponse?.profile) {
-      setWorkspaceError('Unable to load your profile. Check your connection and try again.');
-      return;
-    }
     const responses = [dashboardResponse, maintenanceResponse, amenitiesResponse, propertiesResponse, bookingsResponse, notificationResponse, staffResponse, capabilityResponse];
     setWorkspaceError(responses.some((response) => response === null)
       ? 'Some workspace data could not be loaded. Please try again.' : '');
@@ -100,10 +102,11 @@ export default function AppShell({ session, onSignOut }) {
     } else if (group === 'properties') {
       await refresh('/properties', (data) => setProperties(data.properties || []), 'properties');
     } else if (group === 'staff') {
-      await Promise.all([
-        refresh('/manager/staff', (data) => setStaff(data.staff || []), 'staff'),
-        refresh('/staff/permissions', (data) => setStaffCapabilities(data.check_in_property_ids || []), 'staff permissions'),
-      ]);
+      const { staffResponse, capabilityResponse } = await fetchStaffWorkspace(
+        workspaceRole.current, (path, label) => fetchWorkspaceData(path, accessToken, label),
+      );
+      if (staffResponse) setStaff(staffResponse.staff || []);
+      if (capabilityResponse) setStaffCapabilities(capabilityResponse.check_in_property_ids || []);
     } else if (group === 'notifications') {
       await refresh('/notifications', (data) => setNotifications(data.notifications || []), 'notifications');
     }

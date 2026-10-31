@@ -7,6 +7,12 @@ export default function AuthScreen({ initialMode = 'login' }) {
   const navigate = useNavigate();
   const mode = initialMode;
   const [form, setForm] = useState({ email: '', password: '', full_name: '', role: 'tenant' });
+  const [loginRole, setLoginRole] = useState('tenant');
+  const loginRoles = {
+    tenant: { label: 'Resident', help: 'Use your resident account to manage maintenance requests and amenity bookings.' },
+    manager: { label: 'Manager', help: 'Use your assigned manager account to manage properties, residents, staff, and amenities.' },
+    maintenance_staff: { label: 'Maintenance staff', help: 'Use your invited staff account to view assigned tasks and submit completion evidence.' },
+  };
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -40,7 +46,7 @@ export default function AuthScreen({ initialMode = 'login' }) {
         const { data, error: authError } = await supabase.auth.signUp({
           email,
           password: form.password,
-          options: { emailRedirectTo: `${window.location.origin}/login`, data: { full_name: form.full_name.trim(), role: 'tenant' } },
+          options: { emailRedirectTo: `${window.location.origin}/login`, data: { full_name: form.full_name.trim(), registration_role: form.role } },
         });
         if (authError) throw authError;
         setSuccess(data.session
@@ -87,7 +93,7 @@ export default function AuthScreen({ initialMode = 'login' }) {
           <h2>{mode === 'register' ? 'Make yourself at home.' : mode === 'forgot' ? 'Reset your password.' : mode === 'reset' ? 'Choose a new password.' : 'Your home, in hand.'}</h2>
           <p className="auth-intro">
             {mode === 'register'
-              ? 'Create a resident account to get started.'
+              ? 'Choose an account type to explore your workspace.'
               : mode === 'forgot'
                 ? 'Enter your email and we’ll send a secure reset link.'
                 : mode === 'reset'
@@ -114,6 +120,27 @@ export default function AuthScreen({ initialMode = 'login' }) {
           )}
           <form onSubmit={handleSubmit} className="auth-form" aria-busy={loading}>
             <fieldset disabled={loading} style={{ border: 0, padding: 0, margin: 0, display: 'contents' }}>
+            {mode === 'login' && <div>
+              <label htmlFor="login-role">Sign in as</label>
+              <select id="login-role" className="input" value={loginRole} aria-describedby="login-role-help" onChange={(event) => {
+                setLoginRole(event.target.value);
+                setError('');
+              }}>
+                {Object.entries(loginRoles).map(([value, { label }]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+              <p id="login-role-help" className="auth-role-help">{loginRoles[loginRole].help} Your account’s assigned role determines access.</p>
+            </div>}
+            {mode === 'register' && <div>
+              <label htmlFor="register-role">Account type</label>
+              <select id="register-role" className="input" value={form.role} aria-describedby="register-role-help" onChange={(event) => setForm((current) => ({ ...current, role: event.target.value }))}>
+                {Object.entries(loginRoles).map(([value, { label }]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+              <p id="register-role-help" className="auth-role-help">{form.role === 'manager'
+                ? 'Create and manage your own properties, invite residents and staff, and explore manager tools.'
+                : form.role === 'maintenance_staff'
+                  ? 'Create a staff account. A manager can then add you to a property and assign work.'
+                  : 'Create a resident account. A manager can assign you to a property to start booking amenities and requesting maintenance.'} Confirm your email to activate your account.</p>
+            </div>}
             {mode === 'register' && (
               <div>
                 <label htmlFor="full-name">Full name</label>
@@ -136,13 +163,14 @@ export default function AuthScreen({ initialMode = 'login' }) {
             {error && <div role="alert" className="auth-message auth-message--error">{error}</div>}
             {success && <div role="status" className="auth-message auth-message--success">{success}</div>}
             <button type="submit" className="button-primary auth-submit" disabled={loading}>
-              {loading ? 'Please wait…' : mode === 'login' ? 'Sign in securely' : mode === 'register' ? 'Create account' : mode === 'reset' ? 'Update password' : 'Send reset link'}
+              {loading ? 'Please wait…' : mode === 'login' ? `Sign in as ${loginRoles[loginRole].label.toLowerCase()}` : mode === 'register' ? 'Create account' : mode === 'reset' ? 'Update password' : 'Send reset link'}
               {!loading && <ArrowRight aria-hidden="true" />}
             </button>
             {mode === 'forgot' && <button type="button" className="text-link auth-return" onClick={() => changeMode('login')}>Return to sign in</button>}
             {mode === 'reset' && success && <Link className="text-link auth-return" to="/">Continue to your workspace</Link>}
             </fieldset>
           </form>
+          {mode === 'login' && loginRole !== 'tenant' && <p className="auth-role-help">Need an account? <Link className="text-link" to="/register">Create an account</Link> and choose your account type.</p>}
           <p className="auth-footnote">Your account and property information stay protected.</p>
         </div>
       </section>

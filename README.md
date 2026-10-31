@@ -64,7 +64,7 @@ http://localhost:5173/login
 http://localhost:5173/reset-password
 ```
 
-Registration creates resident accounts. Assign the first manager's `profiles.role` through trusted administration. Managers can then create properties and assign residents and staff.
+Choose Resident, Manager, or Maintenance staff during registration. After email confirmation and sign-in, the account receives its selected role automatically. Managers can create properties and assign residents and staff.
 
 ### 4. Run locally
 
@@ -74,6 +74,8 @@ npm run dev
 
 - Frontend: `http://localhost:5173`
 - API health: `http://localhost:5001/api/health`
+
+For manager and staff account setup, see [role testing](docs/role-testing.md).
 
 ## Testing
 
