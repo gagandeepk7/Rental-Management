@@ -32,6 +32,35 @@ try {
   }
   await page.goto(`${base}/login`);
   await page.getByRole('heading', { name: 'Your home, in hand.' }).waitFor();
+  // Exercise account access without creating accounts or sending email.
+  const signupRequests = [];
+  await page.route('**/auth/v1/signup**', async (route) => {
+    signupRequests.push(route.request().postDataJSON());
+    await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error_code: 'email_address_invalid', msg: 'Invalid email' }) });
+  });
+  await page.getByRole('tab', { name: 'Create account' }).click();
+  await page.getByLabel('Full name').fill('Browser Test');
+  await page.getByLabel('Email address').fill('  PERSON@GMAIL.COM  ');
+  await page.getByLabel('Password', { exact: true }).fill('ValidPassword123!');
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: 'real, deliverable email address' }).waitFor();
+  assert.equal(signupRequests.length, 1);
+  assert.equal(signupRequests[0].email, 'person@gmail.com');
+  assert.equal(signupRequests[0].data.role, 'tenant');
+  await page.getByRole('tab', { name: 'Sign in', exact: true }).click();
+  assert.equal(await page.getByRole('alert').count(), 0);
+  await page.getByRole('button', { name: 'Forgot password?' }).click();
+  await page.getByRole('heading', { name: 'Reset your password.' }).waitFor();
+  await page.goBack();
+  await page.getByRole('heading', { name: 'Your home, in hand.' }).waitFor();
+  await page.goto(`${base}/register`);
+  await page.route('**/auth/v1/signup**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'test-user', aud: 'authenticated', email: 'person@gmail.com', identities: [{ id: 'test-identity' }] }) }));
+  await page.getByLabel('Full name').fill('Browser Test');
+  await page.getByLabel('Email address').fill('person@gmail.com');
+  await page.getByLabel('Password', { exact: true }).fill('ValidPassword123!');
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Check your inbox' }).waitFor();
+  console.log(JSON.stringify({ check: 'registration-and-recovery-navigation', passed: true, mockedAuth: true }));
   await page.goto(base);
   await page.getByRole('heading', { name: /Beautifully considered/ }).waitFor();
   // Allow the lazy WebGL module and its split dependencies to execute.

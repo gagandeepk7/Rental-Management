@@ -61,7 +61,9 @@ export default function AppShell({ session, onSignOut }) {
       setWorkspaceError('Unable to load your profile. Check your connection and try again.');
       return;
     }
-    setWorkspaceError('');
+    const responses = [dashboardResponse, maintenanceResponse, amenitiesResponse, propertiesResponse, bookingsResponse, notificationResponse, staffResponse, capabilityResponse];
+    setWorkspaceError(responses.some((response) => response === null)
+      ? 'Some workspace data could not be loaded. Please try again.' : '');
     setProfile(profileResponse.profile);
     if (dashboardResponse) setDashboard(dashboardResponse);
     if (maintenanceResponse) setMaintenance(maintenanceResponse.maintenanceRequests || []);
@@ -151,6 +153,24 @@ export default function AppShell({ session, onSignOut }) {
     };
   }, [refreshDashboard, refreshRealtimeGroup]);
 
+  // Recover missed updates when a tab reconnects or Realtime delivery is unavailable.
+  useEffect(() => {
+    let refreshing = false;
+    const refreshVisibleWorkspace = async () => {
+      if (document.visibilityState !== 'visible' || refreshing) return;
+      refreshing = true;
+      try { await refreshDashboard(); } finally { refreshing = false; }
+    };
+    const interval = setInterval(() => void refreshVisibleWorkspace(), 30000);
+    window.addEventListener('focus', refreshVisibleWorkspace);
+    document.addEventListener('visibilitychange', refreshVisibleWorkspace);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', refreshVisibleWorkspace);
+      document.removeEventListener('visibilitychange', refreshVisibleWorkspace);
+    };
+  }, [refreshDashboard]);
+
   if (!profile && workspaceError) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 px-4 text-center text-slate-200">
@@ -218,6 +238,9 @@ export default function AppShell({ session, onSignOut }) {
             {mobileNavOpen && <nav id="mobile-navigation" aria-label="Mobile navigation" className="mb-4 grid gap-2 rounded-2xl border border-slate-800 bg-slate-900/70 p-3 sm:grid-cols-2 lg:hidden">
               {navigation.map(({ to, label, icon: Icon }) => <NavLink key={to} end={to === '/'} onClick={() => setMobileNavOpen(false)} className="nav-link flex min-h-11 items-center gap-3 rounded-xl border border-transparent px-3 py-2 text-sm text-slate-300" to={to}><Icon className="h-4 w-4 shrink-0" />{label}</NavLink>)}
             </nav>}
+            {workspaceError && <div role="alert" className="mb-4 rounded-xl border border-amber-700 p-4 text-sm text-amber-200">
+              {workspaceError} <button type="button" className="underline" onClick={() => void refreshDashboard()}>Retry</button>
+            </div>}
             <Suspense fallback={<div className="card rounded-2xl p-5 text-sm text-slate-300">Loading your workspace…</div>}>
               <Routes>
                 <Route path="/" element={<DashboardPage dashboard={dashboard} maintenance={maintenance} bookings={bookings} profile={profile} />} />

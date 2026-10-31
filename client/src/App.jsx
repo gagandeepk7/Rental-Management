@@ -27,8 +27,9 @@ function AuthenticatedApp() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<AuthScreen initialMode="login" />} />
-          <Route path="/register" element={<AuthScreen initialMode="register" />} />
+          <Route path="/login" element={<AuthScreen key="login" initialMode="login" />} />
+          <Route path="/forgot-password" element={<AuthScreen key="forgot" initialMode="forgot" />} />
+          <Route path="/register" element={<AuthScreen key="register" initialMode="register" />} />
           <Route path="/reset-password" element={<AuthScreen initialMode="reset" />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

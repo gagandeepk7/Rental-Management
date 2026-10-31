@@ -1,146 +1,98 @@
 # PropertyFlow
 
-A real-time property rental, maintenance, and amenity management platform built with React, Vite, Express, and Supabase.
+A property rental, maintenance, and amenity management platform with dedicated workspaces for residents, property managers, and maintenance staff.
 
-The public home page and authenticated workspaces use a shared midnight architectural visual system. The landing hero includes a responsive, procedural Three.js building on motion-enabled desktop browsers; architectural photography remains as the lightweight fallback on smaller screens, reduced-motion settings, or unavailable WebGL.
+## Features
 
-## Prerequisites
+- **Residents:** view assigned properties, submit maintenance requests, upload photos, book amenities, and receive notifications.
+- **Property managers:** manage properties, units, tenants, staff, amenities, and booking disputes; assign maintenance and review completed work.
+- **Maintenance staff:** manage assigned tasks, submit completion evidence, and handle permitted amenity operations.
+- **Account management:** email registration and confirmation, sign-in, password recovery, and role-based access.
+- **Live updates:** Supabase Realtime with periodic refresh to recover missed events.
 
-- Node.js 22 (see `.nvmrc`)
-- A Supabase project
-- A local browser with access to the frontend and backend ports
+## Tech Stack
 
-## Environment configuration
+React 19 · Vite · Tailwind CSS · Node.js 22 · Express 5 · Supabase Auth, PostgreSQL, Storage, and Realtime
 
-### Frontend
+## Getting Started
 
-Create or update `client/.env` with:
+### 1. Install dependencies
+
+Use Node.js 22 and run from the repository root:
 
 ```bash
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+npm ci
+npm --prefix client ci
+npm --prefix server ci
+```
+
+### 2. Configure environment variables
+
+Create `client/.env`:
+
+```dotenv
+VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+VITE_SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_KEY
 VITE_API_URL=http://localhost:5001/api
 ```
 
-The project includes `client/.env.example` as the template.
+Create `server/.env`:
 
-### Backend
-
-Create or update `server/.env` with:
-
-```bash
+```dotenv
 PORT=5001
 FRONTEND_ORIGIN=http://localhost:5173
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 ```
 
-> Note: In this local environment, port 5000 is already used by the macOS AirTunes service, so the app runs on 5001 locally. The sample `.env.example` keeps the standard 5000 default for a clean deployment setup.
+Keep environment files out of version control. The service-role key must remain on the server and must never use a `VITE_` prefix.
 
-## Supabase setup
+### 3. Set up Supabase
 
-1. Sign in to your Supabase project.
-2. Open the SQL editor.
-3. Run the migration in `server/supabase/schema.sql`.
-4. Run `server/supabase/role_workflows_migration.sql` to add units, maintenance photos/comments, notifications, activity, booking disputes, and booking lifecycle fields.
-5. Run `server/supabase/feature_security_migration.sql` to enforce API-only domain writes, fix recursive read policies, validate relationships and booking slots, and extend Realtime.
-6. Run `server/supabase/maintenance_completion_review_migration.sql` to enable staff proof submissions and manager review.
-7. Run `server/supabase/maintenance_comment_rls_migration.sql` to allow authenticated request participants to post comments under row-level security. Then run `production_hardening_migration.sql` and `peer_privacy_migration.sql`. For an existing project, the combined `server/supabase/deployment_all_migrations.sql` includes all follow-up migrations in order.
-8. Configure Supabase Auth email invitations and verify the private `maintenance-photos` storage bucket exists (the workflow migration creates it).
-9. Add each deployed frontend origin plus its `/reset-password` path to Supabase Auth's allowed redirect URLs.
-10. Enable Realtime for `maintenance_requests`, `maintenance_comments`, `amenity_bookings`, `notifications`, and `activity_events` if they are not already in the `supabase_realtime` publication.
-11. Keep the service-role key on the server only. Maintenance photos are uploaded with short-lived signed URLs issued by the API after it verifies request access; do not expose the service-role key in the frontend.
-12. Create a manager account and assign its `profiles.role` through a trusted admin process.
+For a new database, run these files in the Supabase SQL editor in order:
 
-## Install dependencies
+1. [`schema.sql`](server/supabase/schema.sql)
+2. [`deployment_all_migrations.sql`](server/supabase/deployment_all_migrations.sql)
 
-From the project root:
+For existing databases, apply only the required follow-up migrations; do not rerun the base schema. Verify the private `maintenance-photos` bucket and required Realtime publication settings.
 
-```bash
-npm install
-cd client && npm install
-cd ../server && npm install
+Enable email signup, configure email delivery, and allow these authentication redirects:
+
+```text
+http://localhost:5173/login
+http://localhost:5173/reset-password
 ```
 
-## Start the apps
+Registration creates resident accounts. Assign the first manager's `profiles.role` through trusted administration. Managers can then create properties and assign residents and staff.
 
-In the project root:
+### 4. Run locally
 
 ```bash
 npm run dev
 ```
 
-This starts the Express API and Vite client together.
-
-You can also run them individually:
-
-```bash
-npm run server
-npm run client
-```
-
-The API writes structured request-duration logs to the server console and warns when a response takes longer than two seconds. Authenticated API responses use `Cache-Control: no-store`. Realtime changes refresh only the affected workspace data and coalesce bursts of updates.
-
-## Database migration
-
-Run:
-
-```bash
-cd server
-psql "$DATABASE_URL" -f supabase/schema.sql
-```
-
-If you are using the Supabase SQL editor, copy the contents of `server/supabase/schema.sql` into a new SQL query and execute it.
-Then execute `server/supabase/role_workflows_migration.sql`, `server/supabase/feature_security_migration.sql`, `server/supabase/maintenance_completion_review_migration.sql`, and `server/supabase/maintenance_comment_rls_migration.sql` in that order. These follow-up migrations are additive and can be run again. Do not rerun the base schema against an existing database.
-
-## First manager account and role setup
-
-1. Register an account from the frontend login page.
-2. Use the Supabase dashboard to confirm the user is created.
-3. Add the relevant `profiles` record in the `profiles` table.
-4. Set the `role` field to `manager` through a trusted admin process.
-5. Only trusted administrators should assign manager or maintenance roles. The app rejects client-side attempts to escalate a user role.
-
-## Core feature checks
-
-- Public home page: visit `/`; account access is available at `/login` and `/register`, with password recovery on the sign-in page.
-- Dashboard: visit `/` after authentication.
-- Maintenance requests: create a request from the maintenance page.
-- Maintenance collaboration: invite staff, assign a request, verify its property and unit location, upload completion proof, submit resolution notes for manager review, and approve or return the work before it is marked complete for tenants.
-- Amenity bookings: create a reservation from the amenities page.
-- Booking lifecycle: check in/out, cancel before the reserved slot starts, and raise/resolve a booking dispute.
-- Manager operations: add properties and units, invite or assign tenants, manage amenity hours, and review overdue requests and activity.
-- Notifications: verify assignment, maintenance, and booking updates appear in the notifications inbox.
-- Real-time updates: open two browser tabs and create or update the same record from one tab; updates should reflect in the other.
+- Frontend: `http://localhost:5173`
+- API health: `http://localhost:5001/api/health`
 
 ## Testing
 
-Run backend tests:
-
 ```bash
-cd server && npm test
+npm --prefix server test
+npm --prefix client run lint
+VITE_API_URL=https://YOUR_BACKEND_HOST/api npm --prefix client run build
 ```
 
-Run frontend checks:
-
-```bash
-cd client && npm run lint && VITE_API_URL=/api npm run build
-```
+Optional integration checks: `npm --prefix server run test:live`. These create and clean up temporary records in the configured Supabase project; use a test project.
 
 ## Deployment
 
-Deploy the frontend and backend together as one Vercel project using the repository root. `vercel.json` builds React and routes `/api/*` to the Express function; other page paths have an SPA fallback.
+Deploy `client/` to Vercel and `server/` to a Node.js host such as Render. Use `npm ci` to install dependencies, `npm run build` for the frontend, and `npm start` for the backend.
 
-Follow [First deployment on Vercel](docs/deploy-vercel.md) for environment variables and Supabase redirect configuration. See [Deployment verification results](docs/deployment-readiness.md) for the checks completed and the remaining hosted-domain checks. Keep `SUPABASE_SERVICE_ROLE_KEY` server-only.
+Set the frontend's `VITE_API_URL` to the backend's absolute HTTPS URL ending in `/api`. On the backend, set `NODE_ENV=production` and `FRONTEND_ORIGIN` to the frontend origin, alongside the Supabase credentials. Update Supabase's Site URL and authentication redirects to the production frontend URLs, then redeploy.
 
-After deployment, run `node scripts/check-deployment.mjs https://YOUR_PROJECT.vercel.app` to check hosted routes and API authentication.
+## Verification
 
-## Manual dashboard configuration
+Backend tests, frontend lint, production build, and browser registration/navigation checks passed. Browser authentication responses were mocked; production email delivery still requires verification. Live Realtime delivery also needs investigation; periodic refresh provides a fallback.
 
-Some setup cannot be automated from code:
-
-- Enable Realtime on the selected tables in Supabase.
-- Add your own project URL and keys in the `.env` files.
-- Create the first manager and assign the role in a secure admin flow.
-- Apply the supplied workflow and security migrations; they configure row-level security and domain write permissions.
+See [evaluation fixes](docs/evaluation-fixes.md) for the detailed verification record.

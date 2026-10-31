@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase.js';
 
 export default function AuthScreen({ initialMode = 'login' }) {
   const navigate = useNavigate();
-  const [mode, setMode] = useState(initialMode);
+  const mode = initialMode;
   const [form, setForm] = useState({ email: '', password: '', full_name: '', role: 'tenant' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -13,20 +13,22 @@ export default function AuthScreen({ initialMode = 'login' }) {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (loading) return;
+    const email = form.email.trim().toLowerCase();
     setLoading(true);
     setError('');
     setSuccess('');
 
     try {
       if (mode === 'forgot') {
-        const { error: resetError } = await supabase.auth.resetPasswordForEmail(form.email, {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: `${window.location.origin}/reset-password`,
         });
         if (resetError) throw resetError;
         setSuccess('If an account exists for that email, a password reset link is on its way.');
       } else if (mode === 'login') {
         const { error: authError } = await supabase.auth.signInWithPassword({
-          email: form.email,
+          email,
           password: form.password,
         });
         if (authError) throw authError;
@@ -35,19 +37,34 @@ export default function AuthScreen({ initialMode = 'login' }) {
         if (updateError) throw updateError;
         setSuccess('Your password has been updated. Continue to your workspace when you are ready.');
       } else {
-        const { error: authError } = await supabase.auth.signUp({
-          email: form.email,
+        const { data, error: authError } = await supabase.auth.signUp({
+          email,
           password: form.password,
-          options: { emailRedirectTo: `${window.location.origin}/login`, data: { full_name: form.full_name, role: 'tenant' } },
+          options: { emailRedirectTo: `${window.location.origin}/login`, data: { full_name: form.full_name.trim(), role: 'tenant' } },
         });
         if (authError) throw authError;
-        setSuccess('Verification email sent. Please check your inbox and confirm your account before signing in.');
+        setSuccess(data.session
+          ? 'Account created. Opening your workspace…'
+          : 'Check your inbox (including spam) for a confirmation link. If you already have an account, sign in or reset your password.');
       }
     } catch (submitError) {
-      setError(submitError.message || 'Authentication failed.');
+      setError(submitError.code === 'email_address_invalid'
+        ? 'This email address was rejected by the email provider. Check the spelling and use a real, deliverable email address.'
+        : submitError.code === 'over_email_send_rate_limit'
+          ? 'Too many email requests. Please wait a few minutes before trying again.'
+          : submitError.message === 'Failed to fetch'
+            ? 'Unable to reach the account service. Check your connection and try again.'
+            : submitError.message || 'Authentication failed.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const changeMode = (value) => {
+    setError('');
+    setSuccess('');
+    setForm((current) => ({ ...current, password: '' }));
+    navigate(value === 'forgot' ? '/forgot-password' : value === 'login' ? '/login' : '/register');
   };
 
   return (
@@ -87,8 +104,7 @@ export default function AuthScreen({ initialMode = 'login' }) {
                   aria-selected={mode === value}
                   className={mode === value ? 'is-selected' : ''}
                   onClick={() => {
-                    setMode(value);
-                    navigate(value === 'login' ? '/login' : '/register');
+                    changeMode(value);
                   }}
                 >
                   {value === 'login' ? 'Sign in' : 'Create account'}
@@ -96,24 +112,25 @@ export default function AuthScreen({ initialMode = 'login' }) {
               ))}
             </div>
           )}
-          <form onSubmit={handleSubmit} className="auth-form">
+          <form onSubmit={handleSubmit} className="auth-form" aria-busy={loading}>
+            <fieldset disabled={loading} style={{ border: 0, padding: 0, margin: 0, display: 'contents' }}>
             {mode === 'register' && (
               <div>
                 <label htmlFor="full-name">Full name</label>
-                <input id="full-name" autoComplete="name" className="input" placeholder="Jordan Lee" value={form.full_name} onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))} />
+                <input id="full-name" required autoComplete="name" className="input" placeholder="Jordan Lee" value={form.full_name} onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))} />
               </div>
             )}
             {mode !== 'reset' && <div>
               <label htmlFor="email">Email address</label>
-              <input id="email" type="email" autoComplete="email" required className="input" placeholder="you@example.com" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
+              <input id="email" type="email" autoCapitalize="none" spellCheck={false} autoComplete="email" required className="input" placeholder="you@example.com" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
             </div>}
             {mode !== 'forgot' && (
               <div>
                 <div className="auth-label-row">
                   <label htmlFor="password">{mode === 'reset' ? 'New password' : 'Password'}</label>
-                  {mode === 'login' && <button type="button" className="text-link" onClick={() => setMode('forgot')}>Forgot password?</button>}
+                  {mode === 'login' && <button type="button" className="text-link" onClick={() => changeMode('forgot')}>Forgot password?</button>}
                 </div>
-                <input id="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required className="input" placeholder={mode === 'reset' ? 'Choose a new password' : 'Password'} value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} />
+                <input id="password" minLength={mode === 'login' ? undefined : 6} type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required className="input" placeholder={mode === 'reset' ? 'Choose a new password' : 'Password'} value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} />
               </div>
             )}
             {error && <div role="alert" className="auth-message auth-message--error">{error}</div>}
@@ -122,8 +139,9 @@ export default function AuthScreen({ initialMode = 'login' }) {
               {loading ? 'Please wait…' : mode === 'login' ? 'Sign in securely' : mode === 'register' ? 'Create account' : mode === 'reset' ? 'Update password' : 'Send reset link'}
               {!loading && <ArrowRight aria-hidden="true" />}
             </button>
-            {mode === 'forgot' && <button type="button" className="text-link auth-return" onClick={() => setMode('login')}>Return to sign in</button>}
+            {mode === 'forgot' && <button type="button" className="text-link auth-return" onClick={() => changeMode('login')}>Return to sign in</button>}
             {mode === 'reset' && success && <Link className="text-link auth-return" to="/">Continue to your workspace</Link>}
+            </fieldset>
           </form>
           <p className="auth-footnote">Your account and property information stay protected.</p>
         </div>

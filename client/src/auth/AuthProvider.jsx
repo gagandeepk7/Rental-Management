@@ -13,6 +13,8 @@ export function AuthProvider({ children }) {
         setSession(data.session);
         setLoading(false);
       }
+    }).catch(() => {
+      if (isMounted) setLoading(false);
     });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, currentSession) => {
